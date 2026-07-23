@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Domain Blacklist Checker</title>
+  <style>
+    :root {
+      --bg: #0e1116; --card: #171b22; --line: #262c36; --fg: #e6edf3;
+      --muted: #8b949e; --accent: #4c8dff;
+      --clean: #2ea043; --listed: #d29922; --bad: #f85149; --unknown: #6e7681;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg); color: var(--fg);
+    }
+    .wrap { max-width: 820px; margin: 0 auto; padding: 40px 20px 80px; }
+    h1 { font-size: 26px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 28px; }
+    form { display: flex; gap: 10px; }
+    input {
+      flex: 1; padding: 13px 15px; font-size: 16px; border-radius: 10px;
+      border: 1px solid var(--line); background: var(--card); color: var(--fg);
+    }
+    input:focus { outline: none; border-color: var(--accent); }
+    button {
+      padding: 13px 22px; font-size: 16px; font-weight: 600; border: none;
+      border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer;
+    }
+    button:disabled { opacity: .6; cursor: default; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 20px; margin-top: 24px;
+    }
+    .top { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+    .score {
+      width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center;
+      font-size: 26px; font-weight: 700; border: 4px solid var(--line); flex: none;
+    }
+    .badge {
+      display: inline-block; padding: 4px 12px; border-radius: 999px;
+      font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .b-clean { background: rgba(46,160,67,.15); color: var(--clean); }
+    .b-listed { background: rgba(210,153,34,.15); color: var(--listed); }
+    .b-blacklisted { background: rgba(248,81,73,.15); color: var(--bad); }
+    .b-unknown { background: rgba(110,118,129,.2); color: var(--unknown); }
+    .meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    .dns { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; }
+    .dns b { color: var(--muted); font-weight: 600; }
+    h3 { font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 22px 0 10px; }
+    .row {
+      border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+    }
+    .row.crit { border-left: 3px solid var(--bad); }
+    .row.high { border-left: 3px solid var(--listed); }
+    .row.med, .row.low { border-left: 3px solid var(--unknown); }
+    .row .z { font-weight: 600; }
+    .row .n { color: var(--muted); font-size: 13px; margin-top: 3px; }
+    .row a { color: var(--accent); font-size: 13px; }
+    .sev { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+    .empty { color: var(--muted); }
+    .warn { color: var(--listed); font-size: 13px; }
+    .err { color: var(--bad); }
+    footer { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff;
+      border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Domain Blacklist Checker</h1>
+    <p class="sub">Check whether a domain and its mail IPs are on spam/malware DNSBLs — with a weighted score and delisting links.</p>
+
+    <form id="f">
+      <input id="q" name="domain" placeholder="example.com" autocomplete="off" autofocus />
+      <button id="go" type="submit">Check</button>
+    </form>
+
+    <div id="out"></div>
+
+    <footer>
+      Timeouts are reported as <b>unknown</b>, never as clean. Weighted score: Spamhaus &gt; Barracuda &gt; SORBS.
+    </footer>
+  </div>
+
+  <script>
+    const f = document.getElementById('f');
+    const q = document.getElementById('q');
+    const go = document.getElementById('go');
+    const out = document.getElementById('out');
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const domain = q.value.trim();
+      if (!domain) return;
+      go.disabled = true;
+      out.innerHTML = '<div class="card"><span class="spinner"></span> Querying DNSBLs…</div>';
+      try {
+        const res = await fetch('/api/check?domain=' + encodeURIComponent(domain));
+        const data = await res.json();
+        render(data);
+      } catch (err) {
+        out.innerHTML = '<div class="card err">Request failed: ' + esc(err.message) + '</div>';
+      } finally {
+        go.disabled = false;
+      }
+    });
+
+    function scoreColor(s) {
+      if (s >= 85) return 'var(--clean)';
+      if (s >= 50) return 'var(--listed)';
+      return 'var(--bad)';
+    }
+
+    function render(d) {
+      if (!d.ok) {
+        out.innerHTML = '<div class="card err">✗ ' + esc(d.error) + '</div>';
+        return;
+      }
+      const badgeClass = 'b-' + d.verdict;
+      let html = '<div class="card">';
+      html += '<div class="top">';
+      html += '<div class="score" style="border-color:' + scoreColor(d.score) + '">' + d.score + '</div>';
+      html += '<div><span class="badge ' + badgeClass + '">' + esc(d.verdict) + '</span>';
+      html += '<div class="meta">' + esc(d.domain) + ' · ' + d.counts.listed + ' listed · '
+            + d.counts.clean + ' clean · ' + d.counts.unknown + ' unknown · ' + d.tookMs + 'ms'
+            + (d.cached ? ' · cached' : '') + '</div></div>';
+      html += '</div>';
+
+      html += '<div class="dns">';
+      html += '<div><b>A</b> ' + (d.dns.a.join(', ') || '—') + '</div>';
+      if (d.dns.aaaa.length) html += '<div><b>AAAA</b> ' + d.dns.aaaa.join(', ') + '</div>';
+      html += '<div><b>MX</b> ' + (d.dns.mx.join(', ') || '—') + '</div>';
+      html += '</div>';
+
+      if (d.listings.length) {
+        html += '<h3>Listings</h3>';
+        for (const l of d.listings) {
+          const cls = { critical: 'crit', high: 'high', medium: 'med', low: 'low' }[l.severity] || 'med';
+          html += '<div class="row ' + cls + '">';
+          html += '<div class="z">' + esc(l.subject) + ' <span class="sev">on ' + esc(l.zone) + ' · ' + esc(l.severity) + '</span></div>';
+          if (l.meanings && l.meanings.length) html += '<div class="n">' + esc(l.meanings.join('; ')) + '</div>';
+          else if (l.note) html += '<div class="n">' + esc(l.note) + '</div>';
+          if (l.delist) html += '<div><a href="' + esc(l.delist) + '" target="_blank" rel="noopener">Delisting →</a></div>';
+          html += '</div>';
+        }
+      } else {
+        html += '<h3>Listings</h3><p class="empty">No blacklist hits. 🎉</p>';
+      }
+
+      if (d.unknowns.length) {
+        html += '<h3>Unknown <span class="warn">(timeout/blocked — not clean)</span></h3>';
+        for (const u of d.unknowns) {
+          html += '<div class="row med"><div class="z">' + esc(u.subject || '') + ' <span class="sev">' + esc(u.zone) + '</span></div>';
+          html += '<div class="n">' + esc(u.reason) + '</div></div>';
+        }
+      }
+
+      html += '</div>';
+      out.innerHTML = html;
+    }
+  </script>
+</body>
+</html>

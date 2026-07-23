@@ -1,0 +1,26 @@
+{
+  "name": "domain-blacklist-checker",
+  "version": "0.1.0",
+  "description": "Check whether a domain (and its mail IPs) is listed on spam/malware DNSBLs, with weighted scoring and delisting guidance.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "check": "node src/cli.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "dnsbl",
+    "blacklist",
+    "spamhaus",
+    "email-deliverability",
+    "domain-reputation"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/static": "^10.1.2",
+    "fastify": "^5.2.0",
+    "tldts": "^6.1.50"
+  }
+}
