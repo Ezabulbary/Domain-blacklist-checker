@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "check": "node src/cli.js",
+    "check:bulk": "node src/bulk-cli.js",
     "test": "node --test"
   },
   "keywords": [

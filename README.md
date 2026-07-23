@@ -35,7 +35,12 @@ npm install
 # one-off CLI check
 npm run check example.com
 
-# web UI + JSON API on http://localhost:3000
+# bulk check from a file / stdin / args
+npm run check:bulk domains.txt
+cat domains.txt | npm run check:bulk
+npm run check:bulk -- --csv domains.txt > report.csv
+
+# web UI (Single + Bulk tabs) + JSON API on http://localhost:3000
 npm start
 
 # tests (pure logic, no network)
@@ -46,9 +51,51 @@ npm test
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/check?domain=<input>` | Full check. Accepts URLs, `www.`, IDNs, or a bare IPv4. |
+| `GET /api/check?domain=<input>` | Single check. Accepts URLs, `www.`, IDNs, or a bare IPv4. |
+| `POST /api/check/bulk` | **Bulk check** (see below). |
 | `GET /api/zones` | The zone catalog with weights + severities. |
 | `GET /api/health` | Liveness + zone count. |
+
+### Bulk check
+
+Check a whole list in one request. The body can be:
+
+- JSON — `{ "domains": ["a.com", "b.com"] }` or `{ "text": "a.com\nb.com" }`
+- raw `text/plain` / `text/csv` — a pasted list or an uploaded `.txt`/`.csv`
+  (newline-, comma-, semicolon-, tab- or space-separated; the first CSV field wins)
+
+Add `?format=csv` to download a CSV report instead of JSON.
+
+```bash
+# JSON list
+curl -X POST localhost:3000/api/check/bulk \
+  -H 'content-type: application/json' \
+  -d '{"domains":["google.com","example.com"]}'
+
+# upload a file, get CSV back
+curl -X POST "localhost:3000/api/check/bulk?format=csv" \
+  -H 'content-type: text/csv' --data-binary @domains.txt -o report.csv
+```
+
+Bulk safeguards: inputs are **de-duped** and blanks skipped; domains are checked
+with a **bounded concurrency pool** (default 5, `DBC_BULK_CONCURRENCY`) so we
+don't swamp the resolver or trip DNSBL rate limits; the list is capped at
+`DBC_BULK_MAX` (default 500). Each domain still benefits from the shared cache.
+
+Response shape:
+
+```json
+{
+  "ok": true,
+  "summary": { "total": 2, "clean": 1, "listed": 1, "blacklisted": 0,
+               "unknown": 0, "invalid": 0, "tookMs": 340 },
+  "skipped": { "blank": 0, "duplicates": 0, "truncated": 0, "max": 500 },
+  "results": [ { "ok": true, "domain": "…", "verdict": "…", "score": 95, … } ]
+}
+```
+
+The web UI's **Bulk list** tab wraps this: paste or upload a list, get a sortable
+results table (by domain / verdict / score) and a **Download CSV** button.
 
 Example response (trimmed):
 
@@ -119,11 +166,13 @@ src/
     resolve.js    DNS resolution + single-zone query (timeout-safe)
     score.js      weighted 0–100 score + verdict + decorated listings
     check.js      orchestrator (normalize → resolve → fan-out → score)
-  server.js       Fastify server: /api/check, /api/zones, static UI, cache, rate limit
-  cli.js          command-line checker
+    bulk.js       bounded-concurrency multi-domain check + CSV export
+  server.js       Fastify server: /api/check, /api/check/bulk, /api/zones, cache, rate limit
+  cli.js          single-domain command-line checker
+  bulk-cli.js     bulk checker (file / stdin / args, --csv output)
 public/
-  index.html      single-page UI (score dial, listings, delist links)
-test/             node:test unit tests for normalize + score
+  index.html      single-page UI: Single + Bulk tabs, sortable table, CSV download
+test/             node:test unit tests for normalize, score, bulk
 ```
 
 ## Roadmap

@@ -15,24 +15,38 @@
       margin: 0; font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       background: var(--bg); color: var(--fg);
     }
-    .wrap { max-width: 820px; margin: 0 auto; padding: 40px 20px 80px; }
+    .wrap { max-width: 940px; margin: 0 auto; padding: 40px 20px 80px; }
     h1 { font-size: 26px; margin: 0 0 4px; }
-    .sub { color: var(--muted); margin: 0 0 28px; }
-    form { display: flex; gap: 10px; }
-    input {
-      flex: 1; padding: 13px 15px; font-size: 16px; border-radius: 10px;
-      border: 1px solid var(--line); background: var(--card); color: var(--fg);
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 18px; }
+    .tab {
+      padding: 8px 18px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: 600;
+      color: var(--muted); background: transparent; border: 1px solid transparent; border-bottom: none;
     }
-    input:focus { outline: none; border-color: var(--accent); }
+    .tab.active { color: var(--fg); background: var(--card); border-color: var(--line); }
+    form { display: flex; gap: 10px; }
+    input[type=text], textarea {
+      flex: 1; padding: 13px 15px; font-size: 16px; border-radius: 10px; width: 100%;
+      border: 1px solid var(--line); background: var(--card); color: var(--fg); font-family: inherit;
+    }
+    textarea { resize: vertical; min-height: 150px; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    input:focus, textarea:focus { outline: none; border-color: var(--accent); }
     button {
       padding: 13px 22px; font-size: 16px; font-weight: 600; border: none;
       border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer;
     }
+    button.ghost { background: transparent; border: 1px solid var(--line); color: var(--fg); }
     button:disabled { opacity: .6; cursor: default; }
+    .bulk-controls { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+    .bulk-controls .hint { color: var(--muted); font-size: 13px; }
+    label.file { font-size: 14px; color: var(--accent); cursor: pointer; }
+    label.file input { display: none; }
     .card {
       background: var(--card); border: 1px solid var(--line); border-radius: 12px;
       padding: 20px; margin-top: 24px;
     }
+    .hidden { display: none; }
+    /* single */
     .top { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
     .score {
       width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center;
@@ -45,14 +59,12 @@
     .b-clean { background: rgba(46,160,67,.15); color: var(--clean); }
     .b-listed { background: rgba(210,153,34,.15); color: var(--listed); }
     .b-blacklisted { background: rgba(248,81,73,.15); color: var(--bad); }
-    .b-unknown { background: rgba(110,118,129,.2); color: var(--unknown); }
+    .b-unknown, .b-invalid { background: rgba(110,118,129,.2); color: var(--unknown); }
     .meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
     .dns { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; }
     .dns b { color: var(--muted); font-weight: 600; }
     h3 { font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 22px 0 10px; }
-    .row {
-      border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
-    }
+    .row { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
     .row.crit { border-left: 3px solid var(--bad); }
     .row.high { border-left: 3px solid var(--listed); }
     .row.med, .row.low { border-left: 3px solid var(--unknown); }
@@ -63,23 +75,67 @@
     .empty { color: var(--muted); }
     .warn { color: var(--listed); font-size: 13px; }
     .err { color: var(--bad); }
+    /* bulk summary chips */
+    .summary { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .chip { padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; background: rgba(110,118,129,.15); }
+    .chip.clean { color: var(--clean); } .chip.listed { color: var(--listed); }
+    .chip.blacklisted { color: var(--bad); } .chip.unknown, .chip.invalid { color: var(--unknown); }
+    .spacer { flex: 1; }
+    /* table */
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; user-select: none; }
+    th:hover { color: var(--fg); }
+    td.score-cell { font-weight: 700; }
+    td .mini { color: var(--muted); font-size: 12px; }
+    tr.bad-row td.score-cell { color: var(--bad); }
+    tr.warn-row td.score-cell { color: var(--listed); }
+    tr.ok-row td.score-cell { color: var(--clean); }
+    .table-scroll { overflow-x: auto; }
     footer { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff;
       border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .progress { height: 6px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 12px; }
+    .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>Domain Blacklist Checker</h1>
-    <p class="sub">Check whether a domain and its mail IPs are on spam/malware DNSBLs — with a weighted score and delisting links.</p>
+    <p class="sub">Check whether domains and their mail IPs are on spam/malware DNSBLs — weighted score + delist links.</p>
 
-    <form id="f">
-      <input id="q" name="domain" placeholder="example.com" autocomplete="off" autofocus />
-      <button id="go" type="submit">Check</button>
-    </form>
+    <div class="tabs">
+      <div class="tab active" data-tab="single">Single</div>
+      <div class="tab" data-tab="bulk">Bulk list</div>
+    </div>
 
-    <div id="out"></div>
+    <!-- SINGLE -->
+    <section id="single-pane">
+      <form id="single-form">
+        <input type="text" id="q" placeholder="example.com" autocomplete="off" autofocus />
+        <button id="go" type="submit">Check</button>
+      </form>
+      <div id="single-out"></div>
+    </section>
+
+    <!-- BULK -->
+    <section id="bulk-pane" class="hidden">
+      <form id="bulk-form">
+        <textarea id="bulk-input" placeholder="One domain per line — or paste a CSV. e.g.
+example.com
+google.com
+mail.contoso.org"></textarea>
+      </form>
+      <div class="bulk-controls">
+        <button id="bulk-go" type="button">Check all</button>
+        <label class="file">Upload .txt/.csv<input type="file" id="bulk-file" accept=".txt,.csv,.lst,text/plain,text/csv" /></label>
+        <button id="bulk-csv" class="ghost hidden" type="button">Download CSV</button>
+        <span class="spacer"></span>
+        <span class="hint" id="bulk-count">0 domains</span>
+      </div>
+      <div id="bulk-out"></div>
+    </section>
 
     <footer>
       Timeouts are reported as <b>unknown</b>, never as clean. Weighted score: Spamhaus &gt; Barracuda &gt; SORBS.
@@ -87,81 +143,228 @@
   </div>
 
   <script>
-    const f = document.getElementById('f');
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const scoreColor = (s) => (s >= 85 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)');
+
+    // ---- tabs ----
+    document.querySelectorAll('.tab').forEach((t) => {
+      t.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
+        t.classList.add('active');
+        const bulk = t.dataset.tab === 'bulk';
+        document.getElementById('bulk-pane').classList.toggle('hidden', !bulk);
+        document.getElementById('single-pane').classList.toggle('hidden', bulk);
+      });
+    });
+
+    // ================= SINGLE =================
+    const sForm = document.getElementById('single-form');
     const q = document.getElementById('q');
     const go = document.getElementById('go');
-    const out = document.getElementById('out');
-    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const sOut = document.getElementById('single-out');
 
-    f.addEventListener('submit', async (e) => {
+    sForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const domain = q.value.trim();
       if (!domain) return;
       go.disabled = true;
-      out.innerHTML = '<div class="card"><span class="spinner"></span> Querying DNSBLs…</div>';
+      sOut.innerHTML = '<div class="card"><span class="spinner"></span> Querying DNSBLs…</div>';
       try {
         const res = await fetch('/api/check?domain=' + encodeURIComponent(domain));
-        const data = await res.json();
-        render(data);
+        renderSingle(await res.json());
       } catch (err) {
-        out.innerHTML = '<div class="card err">Request failed: ' + esc(err.message) + '</div>';
+        sOut.innerHTML = '<div class="card err">Request failed: ' + esc(err.message) + '</div>';
       } finally {
         go.disabled = false;
       }
     });
 
-    function scoreColor(s) {
-      if (s >= 85) return 'var(--clean)';
-      if (s >= 50) return 'var(--listed)';
-      return 'var(--bad)';
+    function renderSingle(d) {
+      if (!d.ok) { sOut.innerHTML = '<div class="card err">✗ ' + esc(d.error) + '</div>'; return; }
+      let h = '<div class="card"><div class="top">';
+      h += '<div class="score" style="border-color:' + scoreColor(d.score) + '">' + d.score + '</div>';
+      h += '<div><span class="badge b-' + d.verdict + '">' + esc(d.verdict) + '</span>';
+      h += '<div class="meta">' + esc(d.domain) + ' · ' + d.counts.listed + ' listed · ' + d.counts.clean
+        + ' clean · ' + d.counts.unknown + ' unknown · ' + d.tookMs + 'ms' + (d.cached ? ' · cached' : '') + '</div></div></div>';
+      h += '<div class="dns"><div><b>A</b> ' + (d.dns.a.join(', ') || '—') + '</div>';
+      if (d.dns.aaaa.length) h += '<div><b>AAAA</b> ' + d.dns.aaaa.join(', ') + '</div>';
+      h += '<div><b>MX</b> ' + (d.dns.mx.join(', ') || '—') + '</div></div>';
+      h += renderListings(d);
+      h += '</div>';
+      sOut.innerHTML = h;
     }
-
-    function render(d) {
-      if (!d.ok) {
-        out.innerHTML = '<div class="card err">✗ ' + esc(d.error) + '</div>';
-        return;
-      }
-      const badgeClass = 'b-' + d.verdict;
-      let html = '<div class="card">';
-      html += '<div class="top">';
-      html += '<div class="score" style="border-color:' + scoreColor(d.score) + '">' + d.score + '</div>';
-      html += '<div><span class="badge ' + badgeClass + '">' + esc(d.verdict) + '</span>';
-      html += '<div class="meta">' + esc(d.domain) + ' · ' + d.counts.listed + ' listed · '
-            + d.counts.clean + ' clean · ' + d.counts.unknown + ' unknown · ' + d.tookMs + 'ms'
-            + (d.cached ? ' · cached' : '') + '</div></div>';
-      html += '</div>';
-
-      html += '<div class="dns">';
-      html += '<div><b>A</b> ' + (d.dns.a.join(', ') || '—') + '</div>';
-      if (d.dns.aaaa.length) html += '<div><b>AAAA</b> ' + d.dns.aaaa.join(', ') + '</div>';
-      html += '<div><b>MX</b> ' + (d.dns.mx.join(', ') || '—') + '</div>';
-      html += '</div>';
-
+    function renderListings(d) {
+      let h = '';
       if (d.listings.length) {
-        html += '<h3>Listings</h3>';
+        h += '<h3>Listings</h3>';
         for (const l of d.listings) {
           const cls = { critical: 'crit', high: 'high', medium: 'med', low: 'low' }[l.severity] || 'med';
-          html += '<div class="row ' + cls + '">';
-          html += '<div class="z">' + esc(l.subject) + ' <span class="sev">on ' + esc(l.zone) + ' · ' + esc(l.severity) + '</span></div>';
-          if (l.meanings && l.meanings.length) html += '<div class="n">' + esc(l.meanings.join('; ')) + '</div>';
-          else if (l.note) html += '<div class="n">' + esc(l.note) + '</div>';
-          if (l.delist) html += '<div><a href="' + esc(l.delist) + '" target="_blank" rel="noopener">Delisting →</a></div>';
-          html += '</div>';
+          h += '<div class="row ' + cls + '"><div class="z">' + esc(l.subject) + ' <span class="sev">on '
+            + esc(l.zone) + ' · ' + esc(l.severity) + '</span></div>';
+          if (l.meanings && l.meanings.length) h += '<div class="n">' + esc(l.meanings.join('; ')) + '</div>';
+          else if (l.note) h += '<div class="n">' + esc(l.note) + '</div>';
+          if (l.delist) h += '<div><a href="' + esc(l.delist) + '" target="_blank" rel="noopener">Delisting →</a></div>';
+          h += '</div>';
         }
       } else {
-        html += '<h3>Listings</h3><p class="empty">No blacklist hits. 🎉</p>';
+        h += '<h3>Listings</h3><p class="empty">No blacklist hits. 🎉</p>';
       }
+      if (d.unknowns && d.unknowns.length) {
+        h += '<h3>Unknown <span class="warn">(timeout/blocked — not clean)</span></h3>';
+        for (const u of d.unknowns)
+          h += '<div class="row med"><div class="z">' + esc(u.subject || '') + ' <span class="sev">' + esc(u.zone)
+            + '</span></div><div class="n">' + esc(u.reason) + '</div></div>';
+      }
+      return h;
+    }
 
-      if (d.unknowns.length) {
-        html += '<h3>Unknown <span class="warn">(timeout/blocked — not clean)</span></h3>';
-        for (const u of d.unknowns) {
-          html += '<div class="row med"><div class="z">' + esc(u.subject || '') + ' <span class="sev">' + esc(u.zone) + '</span></div>';
-          html += '<div class="n">' + esc(u.reason) + '</div></div>';
+    // ================= BULK =================
+    const bInput = document.getElementById('bulk-input');
+    const bGo = document.getElementById('bulk-go');
+    const bFile = document.getElementById('bulk-file');
+    const bCsv = document.getElementById('bulk-csv');
+    const bOut = document.getElementById('bulk-out');
+    const bCount = document.getElementById('bulk-count');
+    let lastResults = [];
+    let sortKey = 'score', sortDir = 1;
+
+    const parseList = (text) => text.split(/[\r\n]+/).map((l) => l.split(/[,;\t]/)[0])
+      .flatMap((c) => c.split(/\s+/)).map((s) => s.trim()).filter(Boolean);
+    const uniqueCount = (text) => new Set(parseList(text).map((s) => s.toLowerCase())).size;
+
+    bInput.addEventListener('input', () => { bCount.textContent = uniqueCount(bInput.value) + ' domains'; });
+
+    bFile.addEventListener('change', async () => {
+      const f = bFile.files[0];
+      if (!f) return;
+      bInput.value = await f.text();
+      bCount.textContent = uniqueCount(bInput.value) + ' domains';
+    });
+
+    bGo.addEventListener('click', async () => {
+      const domains = parseList(bInput.value);
+      if (!domains.length) { bOut.innerHTML = '<div class="card err">Add at least one domain.</div>'; return; }
+      bGo.disabled = true;
+      bCsv.classList.add('hidden');
+      bOut.innerHTML = '<div class="card"><span class="spinner"></span> Checking ' + uniqueCount(bInput.value)
+        + ' domains…<div class="progress"><div></div></div><div class="meta" style="margin-top:8px">'
+        + 'Running ~5 at a time to respect DNSBL rate limits.</div></div>';
+      try {
+        const res = await fetch('/api/check/bulk', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ domains }),
+        });
+        const data = await res.json();
+        if (!data.ok) { bOut.innerHTML = '<div class="card err">✗ ' + esc(data.error) + '</div>'; return; }
+        lastResults = data.results;
+        renderBulk(data);
+        bCsv.classList.remove('hidden');
+      } catch (err) {
+        bOut.innerHTML = '<div class="card err">Request failed: ' + esc(err.message) + '</div>';
+      } finally {
+        bGo.disabled = false;
+      }
+    });
+
+    bCsv.addEventListener('click', () => {
+      const csv = toCsv(lastResults);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'blacklist-report.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    const VERDICT_RANK = { blacklisted: 0, listed: 1, unknown: 2, invalid: 3, clean: 4 };
+
+    function renderBulk(data) {
+      const s = data.summary;
+      let h = '<div class="card"><div class="summary">';
+      h += '<span class="chip">' + s.total + ' total</span>';
+      h += '<span class="chip clean">' + s.clean + ' clean</span>';
+      h += '<span class="chip listed">' + s.listed + ' listed</span>';
+      h += '<span class="chip blacklisted">' + s.blacklisted + ' blacklisted</span>';
+      h += '<span class="chip unknown">' + s.unknown + ' unknown</span>';
+      if (s.invalid) h += '<span class="chip invalid">' + s.invalid + ' invalid</span>';
+      h += '<span class="spacer"></span><span class="hint meta">' + (s.tookMs / 1000).toFixed(1) + 's</span>';
+      h += '</div>';
+      if (data.skipped && (data.skipped.blank || data.skipped.truncated))
+        h += '<div class="meta" style="margin-top:8px">skipped ' + data.skipped.blank + ' blank'
+          + (data.skipped.truncated ? ', ' + data.skipped.truncated + ' over the ' + data.skipped.max + ' cap' : '') + '</div>';
+      h += '<div class="table-scroll">' + renderTable() + '</div></div>';
+      bOut.innerHTML = h;
+      wireSort();
+    }
+
+    function sortedResults() {
+      const rows = [...lastResults];
+      rows.sort((a, b) => {
+        let av, bv;
+        if (sortKey === 'score') { av = a.ok ? a.score : -1; bv = b.ok ? b.score : -1; }
+        else if (sortKey === 'domain') { av = (a.domain || a.input || '').toLowerCase(); bv = (b.domain || b.input || '').toLowerCase(); }
+        else { av = VERDICT_RANK[a.ok ? a.verdict : 'invalid']; bv = VERDICT_RANK[b.ok ? b.verdict : 'invalid']; }
+        if (av < bv) return -1 * sortDir;
+        if (av > bv) return 1 * sortDir;
+        return 0;
+      });
+      return rows;
+    }
+
+    function renderTable() {
+      const arrow = (k) => (sortKey === k ? (sortDir === 1 ? ' ▲' : ' ▼') : '');
+      let h = '<table><thead><tr>'
+        + '<th data-k="domain">Domain' + arrow('domain') + '</th>'
+        + '<th data-k="verdict">Verdict' + arrow('verdict') + '</th>'
+        + '<th data-k="score">Score' + arrow('score') + '</th>'
+        + '<th>Listings</th></tr></thead><tbody>';
+      for (const r of sortedResults()) {
+        if (!r.ok) {
+          h += '<tr><td>' + esc(r.input) + '</td><td><span class="badge b-invalid">invalid</span></td>'
+            + '<td class="score-cell">—</td><td class="mini">' + esc(r.error) + '</td></tr>';
+          continue;
         }
+        const rowCls = r.verdict === 'clean' ? 'ok-row' : (r.verdict === 'blacklisted' ? 'bad-row' : (r.verdict === 'listed' ? 'warn-row' : ''));
+        const listings = r.listings.length
+          ? r.listings.map((l) => esc(l.zone)).join(', ')
+          : '<span class="mini">—</span>';
+        h += '<tr class="' + rowCls + '"><td>' + esc(r.domain)
+          + (r.dns.a.length ? ' <span class="mini">' + esc(r.dns.a[0]) + (r.dns.a.length > 1 ? ' +' + (r.dns.a.length - 1) : '') + '</span>' : '')
+          + '</td>'
+          + '<td><span class="badge b-' + r.verdict + '">' + esc(r.verdict) + '</span></td>'
+          + '<td class="score-cell">' + r.score + '</td>'
+          + '<td>' + listings + '</td></tr>';
       }
+      h += '</tbody></table>';
+      return h;
+    }
 
-      html += '</div>';
-      out.innerHTML = html;
+    function wireSort() {
+      bOut.querySelectorAll('th[data-k]').forEach((th) => {
+        th.addEventListener('click', () => {
+          const k = th.dataset.k;
+          if (sortKey === k) sortDir *= -1;
+          else { sortKey = k; sortDir = k === 'domain' ? 1 : 1; }
+          const scroll = bOut.querySelector('.table-scroll');
+          if (scroll) scroll.innerHTML = renderTable();
+          wireSort();
+        });
+      });
+    }
+
+    function toCsv(results) {
+      const head = ['input', 'domain', 'verdict', 'score', 'listed', 'clean', 'unknown', 'a_records', 'listings', 'error'];
+      const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      const lines = [head.join(',')];
+      for (const r of results) {
+        const row = r.ok
+          ? [r.input, r.domain, r.verdict, r.score, r.counts.listed, r.counts.clean, r.counts.unknown,
+             r.dns.a.join(' '), r.listings.map((l) => l.subject + '@' + l.zone).join(' '), '']
+          : [r.input, '', 'invalid', '', '', '', '', '', '', r.error];
+        lines.push(row.map(cell).join(','));
+      }
+      return lines.join('\n');
     }
   </script>
 </body>
