@@ -15,7 +15,22 @@ export function buildResolver(servers, opts = {}) {
     (process.env.DBC_RESOLVERS
       ? process.env.DBC_RESOLVERS.split(',').map((s) => s.trim()).filter(Boolean)
       : null);
-  if (list && list.length) resolver.setServers(list);
+  if (list && list.length) {
+    resolver.setServers(list);
+  } else {
+    // No explicit servers: normally c-ares inherits the system DNS. On some
+    // setups (notably Windows) it comes up with NO servers, so every query
+    // fails instantly and the whole app looks broken. Fall back to public
+    // resolvers in that case so the tool at least works. (Set DBC_RESOLVERS to
+    // your own recursive resolver in production — see plan §5.1.)
+    try {
+      if (!resolver.getServers || resolver.getServers().length === 0) {
+        resolver.setServers(['1.1.1.1', '8.8.8.8']);
+      }
+    } catch {
+      resolver.setServers(['1.1.1.1', '8.8.8.8']);
+    }
+  }
   return resolver;
 }
 

@@ -114,6 +114,8 @@
     .mini { color: var(--muted); font-size: 12px; }
     .txt-bad { color: var(--bad); } .txt-warn { color: var(--listed); }
     .hint2 { color: var(--muted); font-size: 12.5px; margin: 10px 2px 0; }
+    .banner { border: 1px solid var(--listed); background: rgba(210,153,34,.1); color: var(--fg); line-height: 1.6; }
+    .banner code { background: rgba(255,255,255,.08); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
     /* risk gauge */
     .gauge-wrap { display: grid; place-items: center; flex: none; }
     .gauge .g-num { fill: var(--fg); font-size: 24px; font-weight: 700; }
@@ -261,6 +263,15 @@ mail.contoso.org"></textarea>
       report = d;
       const bl = d.blacklist;
       let h = '';
+
+      // --- DNS-failure banner: the resolver couldn't reach a DNS server, so
+      // nothing resolves and every domain looks empty/identical. ---
+      if (d.dnsError) {
+        h += '<div class="card banner">⚠️ <b>DNS resolution failed</b> — the app could not reach a DNS server, '
+          + 'so no domain resolves (that is why every domain looks the same). '
+          + 'Fix: set a DNS resolver and restart, e.g. <code>set DBC_RESOLVERS=1.1.1.1</code> then <code>npm start</code>. '
+          + 'If it still fails, your network/firewall is blocking DNS (port 53) — try another network.</div>';
+      }
 
       // --- summary card: gauge + standing ---
       h += '<div class="card"><div class="top">';

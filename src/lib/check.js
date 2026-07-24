@@ -34,6 +34,11 @@ export async function checkDomain(input, opts = {}) {
     ? { a: [norm.host], aaaa: [], mx: [], errors: {} }
     : await resolveDomain(norm.domain, resolver);
 
+  // No A record AND the lookups errored (not a clean NXDOMAIN) means the
+  // resolver itself couldn't reach a DNS server — every domain then looks empty
+  // and "the same". Surface it so the UI can tell the user to set DBC_RESOLVERS.
+  const dnsError = !norm.isIp && dns.a.length === 0 && Object.keys(dns.errors).length > 0;
+
   // Build the job list, keeping each job's identity (meta + subject) so a job
   // that misses the overall cap can still be reported as its own zone row.
   const jobs = [];
@@ -74,6 +79,7 @@ export async function checkDomain(input, opts = {}) {
     host: norm.host,
     isIp: norm.isIp,
     resolvesTo: dns.a,
+    dnsError,
     dns: { a: dns.a, aaaa: dns.aaaa, mx: dns.mx, errors: dns.errors },
     zonesChecked,
     listedCount,

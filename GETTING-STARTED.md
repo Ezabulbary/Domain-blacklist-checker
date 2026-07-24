@@ -158,6 +158,7 @@ Puro list `.env.example` file e ache.
 | Error / Samasya | Karon + Fix |
 |---|---|
 | `Cannot find package 'pg'` | `npm install` chalao nai. Chalao. |
+| **Shob domain "same"/faka result, "resolves to —", A/MX faka, 0 clean** | Tomar machine e **DNS kaj korche na** — kono domain resolve hocche na. Fix: `set DBC_RESOLVERS=1.1.1.1` diye `npm start` (PowerShell: `$env:DBC_RESOLVERS="1.1.1.1"`). Tao na hole network/firewall DNS (port 53) block korche — onno network e cheshta koro. UI ekhon ekta warning banner-o dekhabe. |
 | `npm start` e port busy (`EADDRINUSE`) | Onno kichu 3000 port e cholche. `set PORT=3001` diye chalao. |
 | Onek list "TIMEOUT" dekhachche | Normal — public resolver + key nai. §5 dekho. |
 | `history requires DATABASE_URL` | DB set kora nai. §4 dekho (ba history bad dao). |
