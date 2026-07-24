@@ -4,10 +4,46 @@ Check whether a domain — and the IPs behind its A record — are listed on spa
 malware **DNSBLs**, with a **weighted 0–100 reputation score** and **delisting
 links** for every hit.
 
-This is the **MVP**: single-domain check, ~20 DNSBL zones across IP + domain
-blocklists, a one-page UI, and no auth. It is built so the well-known DNSBL
-gotchas are handled from day one (timeout ≠ clean, weighted scoring,
-public-resolver detection, caching, rate limiting).
+Single-domain and bulk checks against **~68 DNSBL/URIBL zones** (the mxtoolbox
+set), a full per-blacklist results table (`LISTED / OK / TIMEOUT` with reason,
+TTL and response time), a one-page UI, and no auth. Built so the well-known
+DNSBL gotchas are handled from day one (timeout ≠ clean, weighted scoring,
+public-/key-resolver detection, caching, rate limiting).
+
+### Blacklist coverage & the results table
+
+A check resolves the domain to its IP(s) and queries **every** zone in the
+catalog (`src/lib/zones.js`) — IP-based lists against each A record, domain/URI
+lists against the domain — then returns a row per blacklist:
+
+```
+Checking getitok.top which resolves to 104.21.18.37 against 69 known blacklists
+Listed 2 times · 24 timeout/unknown · 97 clean
+
+STATUS    BLACKLIST        REASON                     TTL   RESP
+LISTED    SURBL multi      getitok.top was listed     180   3ms
+LISTED    UCEPROTECTL3     104.21.18.37 was listed    2100  22ms
+OK        Spamhaus ZEN     …                          …
+TIMEOUT   ivmURI (key)     requires key (unverified)  …
+```
+
+Every hostname in the catalog was **validated against live DNS** (SOA/NS + the
+`127.0.0.2` test-point), not copied from a list. Each zone is tagged:
+
+- **live** — responds normally.
+- **requiresKey** — Barracuda, Abusix, invaluement, Spamhaus (public resolver),
+  Sender Score. These return a positive for *every* query when you're not
+  authorized, so a "listed" answer is downgraded to **unknown** unless you opt
+  in with `DBC_TRUST_KEYED=true` (i.e. you've pointed `DBC_RESOLVERS` at an
+  authorized resolver / DQS). The `127.255.255.x` block sentinels are always
+  treated as unknown.
+- **defunct** — SORBS (shut 2024), MSRBL, DRMX, HIL/HIL2. Kept for parity; they
+  answer NXDOMAIN → shown OK.
+- **unverified** — couldn't confirm from the test host; low weight so they can't
+  skew the score.
+
+Combined lists like Hostkarma use a `listedCodes` filter so their `127.0.0.1`
+**whitelist** answer is never miscounted as a listing.
 
 ## What it does
 
@@ -51,10 +87,36 @@ npm test
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/check?domain=<input>` | Single check. Accepts URLs, `www.`, IDNs, or a bare IPv4. |
-| `POST /api/check/bulk` | **Bulk check** (see below). |
-| `GET /api/zones` | The zone catalog with weights + severities. |
+| `GET /api/analyze?domain=<input>` | **Full deliverability report**: risk score, auth health, blacklists, recommendations (see below). |
+| `GET /api/auth?domain=<input>&selector=<sel>` | Authentication health only (SPF / DKIM / DMARC / MX / PTR). |
+| `GET /api/check?domain=<input>` | Blacklist check + full results table. |
+| `POST /api/check/bulk` | **Bulk check**. |
+| `GET /api/zones` | The zone catalog with categories, weights + severities. |
+| `GET /api/history?domain=<input>` | Stored check history (needs `DATABASE_URL`). |
 | `GET /api/health` | Liveness + zone count. |
+
+### Deliverability report (`/api/analyze`)
+
+The **Analyze** tab and `/api/analyze` combine everything into one report — the
+implementable slice of a full deliverability monitor:
+
+- **Risk score (0-100) + standing** — blends blacklist reputation (60%) and
+  authentication health (40%).
+- **Authentication health** (real, from live DNS):
+  - **SPF** — record, all-qualifier (`-all`/`~all`), and the 10-lookup budget.
+  - **DKIM** — probes common selectors (google, selector1/2, k1, …); pass your
+    own with `?selector=`.
+  - **DMARC** — policy (`p=`), `sp`, `pct`, `rua`, alignment.
+  - **MX** and **PTR/rDNS** (forward-confirmed) for resolved IPs.
+  - → a 0-100 **auth score**.
+- **Blacklists** — the full 90+-zone table, now **categorized** (email / domain /
+  ip / spam / malware) so the UI can filter.
+- **Recommendations** — prioritized, actionable: missing/weak SPF, DMARC
+  `p=none`, no DKIM, each listing + its delist link, PTR mismatch.
+- **Engagement & reputation signals** (bounce/complaint/open rate, Sender Score,
+  spam traps, volume) — these come from your **ESP/MTA, not DNS**, so they are
+  shown as *not connected* until wired in. The report models them and lists
+  their sources rather than fabricating numbers.
 
 ### Bulk check
 
@@ -123,14 +185,66 @@ Example response (trimmed):
 `verdict` is one of `clean` · `listed` · `blacklisted` (a `critical`/Spamhaus
 zone hit) · `unknown` (only timeouts, no definitive answer).
 
+## Database (persistence, history, monitoring)
+
+The app runs **DB-less by default**. Set `DATABASE_URL` to enable persistence:
+every successful check is saved, `GET /api/history?domain=` reads it back, and
+the schema is ready for the monitoring/alerting features on the roadmap.
+
+```bash
+# spin up local Postgres
+docker compose up -d db
+
+# apply migrations
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/blacklist npm run db:migrate
+
+# run with persistence on
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/blacklist npm start
+```
+
+### Schema (plan §6, expanded)
+
+PostgreSQL 13+. Migrations live in `src/db/migrations/` and are tracked in a
+`schema_migrations` table by the runner.
+
+| Table | Purpose | Key columns & rules |
+|---|---|---|
+| `users` | accounts / API clients | `email` (case-insensitive unique), `plan` enum `free\|pro\|agency`, auto-generated `api_key`, `updated_at` trigger |
+| `domains` | every registrable domain seen | `name` unique + normalized (lowercase, no whitespace) CHECK, `first_seen`, `last_checked_at` |
+| `checks` | one row per reputation check | FK→`domains` (CASCADE), FK→`users` (SET NULL, so anonymous checks persist), `score` 0–100 CHECK, `verdict` enum, full `raw_result` JSONB (GIN-indexed) |
+| `monitors` | a user watching a domain | FK→`users`/`domains` (CASCADE), `frequency` enum, `active`, `next_run_at` (indexed for due-polling), unique per `(user, domain)` |
+| `alerts` | recorded reputation changes | FK→`monitors` (CASCADE), `zone`, `status_change` enum `listed\|delisted`, `notified_at` outbox |
+
+Relationships: `users 1─* checks`, `domains 1─* checks`, `users 1─* monitors *─1 domains`,
+`monitors 1─* alerts`. Deleting a user cascades to their monitors and alerts but
+only nulls the `user_id` on their checks (the check history for a domain is
+retained).
+
+The data-access layer is in `src/db/repositories/` — one module per table with
+typed CRUD (e.g. `db.checks.saveCheck(result, { userId })`,
+`db.monitors.claimDueMonitors()`, `db.alerts.recordChanges(...)`) imported via
+`src/db/index.js`.
+
+DB integration tests live in `test/db.test.js`; they **skip** unless
+`TEST_DATABASE_URL` is set:
+
+```bash
+TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/blacklist_test npm test
+```
+
 ## Configuration
 
 | Env var | Default | Purpose |
 |---|---|---|
 | `PORT` / `HOST` | `3000` / `0.0.0.0` | Server bind. |
+| `DATABASE_URL` | — | Postgres connection string. Unset = DB-less. |
+| `DATABASE_SSL` | `false` | Set `true` for managed providers requiring TLS. |
 | `DBC_RESOLVERS` | system | Comma-separated DNS servers. **Set this to your own recursive resolver in production** (see below). |
+| `DBC_TRUST_KEYED` | `false` | Trust "listed" answers from key-required zones (set only when `DBC_RESOLVERS` is an authorized resolver / DQS). |
+| `DBC_QUERY_CONCURRENCY` | `20` | Max simultaneous zone queries per check (pooled so the resolver isn't swamped). |
 | `DBC_CACHE_TTL_MS` | `900000` (15 min) | Result cache TTL. |
 | `DBC_RATE_MAX` / `DBC_RATE_WINDOW_MS` | `30` / `60000` | Per-IP rate limit. |
+| `DBC_BULK_MAX` / `DBC_BULK_CONCURRENCY` | `500` / `5` | Bulk list cap and parallelism. |
 
 ## Critical gotchas (already handled)
 
@@ -167,12 +281,22 @@ src/
     score.js      weighted 0–100 score + verdict + decorated listings
     check.js      orchestrator (normalize → resolve → fan-out → score)
     bulk.js       bounded-concurrency multi-domain check + CSV export
-  server.js       Fastify server: /api/check, /api/check/bulk, /api/zones, cache, rate limit
+    auth.js       SPF / DKIM / DMARC / MX / PTR health + auth score (live DNS)
+    recommend.js  rule-based, prioritized recommendations
+    analyze.js    unified report: blacklists + auth + risk score + recs + signals
+  db/
+    pool.js       pg pool (optional; null when DATABASE_URL unset) + txn helper
+    migrate.js    migration runner (tracks schema_migrations)
+    migrations/   001_init.sql — the plan §6 schema
+    repositories/ users, domains, checks, monitors, alerts — typed CRUD
+    index.js      barrel: import { db } from './db/index.js'
+  server.js       Fastify: /api/check, /api/check/bulk, /api/history, /api/zones
   cli.js          single-domain command-line checker
   bulk-cli.js     bulk checker (file / stdin / args, --csv output)
 public/
   index.html      single-page UI: Single + Bulk tabs, sortable table, CSV download
-test/             node:test unit tests for normalize, score, bulk
+test/             node:test: normalize, score, bulk (+ db.test.js, DB-gated)
+docker-compose.yml  local Postgres for development
 ```
 
 ## Roadmap

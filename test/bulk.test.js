@@ -59,6 +59,17 @@ test('honors concurrency without dropping work', async () => {
   assert.ok(peak <= 3, `peak concurrency ${peak} should not exceed 3`);
 });
 
+test('resultsToCsv neutralizes spreadsheet formula injection', async () => {
+  // A malicious "domain" that fails normalization is echoed back in the CSV.
+  const evilCheck = (input) => Promise.resolve({ ok: false, input, error: 'invalid' });
+  const { results } = await checkMany(['=HYPERLINK("http://evil","x")'], { checkFn: evilCheck });
+  const csv = resultsToCsv(results);
+  // The dangerous cell must be quoted and prefixed with a single quote so it is
+  // not executed as a formula.
+  assert.ok(csv.includes(`"'=HYPERLINK`), `expected neutralized cell, got: ${csv}`);
+  assert.ok(!/^=HYPERLINK/m.test(csv), 'no raw formula at start of a line');
+});
+
 test('resultsToCsv produces a header and one row per result, escaping commas', async () => {
   const { results } = await checkMany(['listed.com', 'bad..domain'], { checkFn: fakeCheck });
   const csv = resultsToCsv(results);

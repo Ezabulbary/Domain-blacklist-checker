@@ -8,8 +8,8 @@ import { Resolver } from 'node:dns/promises';
 //
 // If unset we inherit the system resolvers, which is fine for local dev but NOT
 // for a deployed service that queries Spamhaus.
-export function buildResolver(servers) {
-  const resolver = new Resolver({ timeout: 3000, tries: 1 });
+export function buildResolver(servers, opts = {}) {
+  const resolver = new Resolver({ timeout: opts.timeout ?? 3000, tries: opts.tries ?? 1 });
   const list =
     servers ||
     (process.env.DBC_RESOLVERS
@@ -56,28 +56,52 @@ export async function resolveDomain(domain, resolver) {
 export const reverseIp = (ip) => ip.split('.').reverse().join('.');
 
 /**
- * Query a single (subject, zone) pair.
+ * Query a single (subject, zone) pair, capturing TTL and response time.
  *
  * A listed entry answers with a 127.0.0.x A record; a clean entry answers
  * NXDOMAIN/ENOTFOUND. Crucially, a timeout is NOT "clean" — it's `listed: null`
  * (unknown), so we never give a false all-clear (plan §5.4).
  *
+ * Combined lists (e.g. Hostkarma) encode a *whitelist* in 127.0.0.1: when a
+ * zone declares `listedCodes`, a hit only counts as listed if a returned code
+ * is in that set — otherwise it's a clean/whitelist answer, not a listing.
+ *
  * @param subject reversed IP (for ip zones) or the domain (for domain zones)
- * @returns { zone, listed: true|false|null, codes?, error? }
+ * @returns { zone, listed: true|false|null, codes?, ttl?, responseMs, error? }
  */
-export async function queryZone(subject, zoneMeta, resolver) {
+export async function queryZone(subject, zoneMeta, resolver, opts = {}) {
   const fqdn = `${subject}.${zoneMeta.zone}`;
+  const started = Date.now();
+  // Whether we trust "listed" answers from key-required zones. Without a key /
+  // authorized resolver these lists return a positive for *every* query, so we
+  // downgrade them to "unknown" unless the operator opts in (DBC_TRUST_KEYED).
+  const trustKeyed = opts.trustKeyed ?? process.env.DBC_TRUST_KEYED === 'true';
   try {
-    const codes = await resolver.resolve4(fqdn);
-    // 127.255.255.254 is the standard "you are querying from a blocked/public
-    // resolver" sentinel — treat as unknown, not listed (plan §5.1).
-    if (codes.includes('127.255.255.254')) {
-      return { ...zoneMeta, listed: null, error: 'PUBLIC_RESOLVER_BLOCKED', codes };
+    const records = await resolver.resolve4(fqdn, { ttl: true });
+    const responseMs = Date.now() - started;
+    const codes = records.map((r) => r.address);
+    const ttl = records.reduce((m, r) => Math.min(m, r.ttl), Infinity);
+    const ttlOut = Number.isFinite(ttl) ? ttl : null;
+
+    // 127.255.255.x is the conventional "query blocked / not authorized"
+    // sentinel range (Spamhaus .254, Sender Score .255, etc.) — never a real
+    // listing; report as unknown (plan §5.1).
+    if (codes.some((c) => c.startsWith('127.255.255.'))) {
+      return { ...zoneMeta, listed: null, error: 'PUBLIC_RESOLVER_BLOCKED', codes, responseMs };
     }
-    return { ...zoneMeta, listed: true, codes };
+    // Respect a zone's listedCodes filter (whitelist vs blacklist answers).
+    if (zoneMeta.listedCodes && !codes.some((c) => zoneMeta.listedCodes.includes(c))) {
+      return { ...zoneMeta, listed: false, codes, ttl: ttlOut, responseMs };
+    }
+    // Key-required list returned a hit but we're not authorized -> untrusted.
+    if (zoneMeta.requiresKey && !trustKeyed) {
+      return { ...zoneMeta, listed: null, error: 'REQUIRES_KEY', codes, responseMs };
+    }
+    return { ...zoneMeta, listed: true, codes, ttl: ttlOut, responseMs };
   } catch (e) {
-    if (NOT_FOUND.has(e.code)) return { ...zoneMeta, listed: false };
+    const responseMs = Date.now() - started;
+    if (NOT_FOUND.has(e.code)) return { ...zoneMeta, listed: false, responseMs };
     // ETIMEOUT, ESERVFAIL, REFUSED, etc. -> unknown.
-    return { ...zoneMeta, listed: null, error: e.code || 'ERROR' };
+    return { ...zoneMeta, listed: null, error: e.code || 'ERROR', responseMs };
   }
 }

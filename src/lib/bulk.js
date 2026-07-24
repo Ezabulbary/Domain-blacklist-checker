@@ -112,6 +112,9 @@ export function resultsToCsv(results) {
 }
 
 function csvCell(v) {
-  const s = String(v ?? '');
+  let s = String(v ?? '');
+  // Neutralize spreadsheet formula injection: a cell beginning with = + - @
+  // (or tab/CR) is executed as a formula by Excel/Sheets. Prefix with a quote.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }

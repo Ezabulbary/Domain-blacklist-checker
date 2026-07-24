@@ -92,6 +92,58 @@
     tr.warn-row td.score-cell { color: var(--listed); }
     tr.ok-row td.score-cell { color: var(--clean); }
     .table-scroll { overflow-x: auto; }
+    /* blacklist results table */
+    .tbl-head { display: flex; align-items: center; justify-content: space-between; margin: 22px 0 8px; }
+    .toggle { font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+    .toggle input { vertical-align: -1px; margin-right: 5px; }
+    table.bl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    table.bl th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase;
+      letter-spacing: .04em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    table.bl th.num, table.bl td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+    table.bl td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    table.bl td.st { white-space: nowrap; font-size: 11px; font-weight: 700; letter-spacing: .03em; color: var(--muted); }
+    table.bl td.st .dot { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%;
+      color: #fff; font-size: 11px; margin-right: 7px; vertical-align: -3px; }
+    tr.st-listed td.st { color: var(--bad); } tr.st-listed td.st .dot { background: var(--bad); }
+    tr.st-ok td.st { color: var(--clean); } tr.st-ok td.st .dot { background: var(--clean); }
+    tr.st-timeout td.st { color: var(--listed); } tr.st-timeout td.st .dot { background: var(--listed); }
+    tr.st-listed { background: rgba(248,81,73,.05); }
+    table.bl td a { color: var(--accent); margin-left: 6px; }
+    .pill { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted);
+      border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-left: 4px; }
+    .mini { color: var(--muted); font-size: 12px; }
+    .txt-bad { color: var(--bad); } .txt-warn { color: var(--listed); }
+    .hint2 { color: var(--muted); font-size: 12.5px; margin: 10px 2px 0; }
+    /* risk gauge */
+    .gauge-wrap { display: grid; place-items: center; flex: none; }
+    .gauge .g-num { fill: var(--fg); font-size: 24px; font-weight: 700; }
+    .gauge .g-lbl { fill: var(--muted); font-size: 9px; letter-spacing: .1em; }
+    .standing { font-size: 11px; font-weight: 700; letter-spacing: .04em; margin-top: 4px; }
+    /* auth + signal cards */
+    .auth-grid, .sig-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 6px 0 4px; }
+    .auth, .sig { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; border-left-width: 3px; overflow: hidden; }
+    .auth-l { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+    .auth-v { font-size: 20px; font-weight: 700; margin: 3px 0; overflow-wrap: anywhere; }
+    .auth .mini, .sig .mini { overflow-wrap: anywhere; }
+    .auth-v.muted { font-size: 14px; font-weight: 600; color: var(--unknown); }
+    .auth.st-ok { border-left-color: var(--clean); } .auth.st-ok .auth-v { color: var(--clean); }
+    .auth.st-timeout { border-left-color: var(--listed); } .auth.st-timeout .auth-v { color: var(--listed); }
+    .auth.st-listed { border-left-color: var(--bad); } .auth.st-listed .auth-v { color: var(--bad); }
+    .sig { border-left-color: var(--line); }
+    /* recommendations */
+    .rec { border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; margin-bottom: 9px; border-left-width: 3px; }
+    .rec.crit { border-left-color: var(--bad); } .rec.high { border-left-color: var(--listed); }
+    .rec.med { border-left-color: var(--accent); } .rec.low { border-left-color: var(--unknown); }
+    .rec-t { font-weight: 600; }
+    .sev-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+    .sev-dot.critical { background: var(--bad); } .sev-dot.high { background: var(--listed); }
+    .sev-dot.medium { background: var(--accent); } .sev-dot.low { background: var(--unknown); }
+    .rec .sev { margin-left: 4px; }
+    /* category tabs + pill */
+    .cat-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+    .cat { font-size: 12px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); cursor: pointer; }
+    .cat.active { color: var(--fg); border-color: var(--accent); background: rgba(76,141,255,.1); }
+    .cat-pill { text-transform: uppercase; }
     footer { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff;
       border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; }
@@ -106,16 +158,17 @@
     <p class="sub">Check whether domains and their mail IPs are on spam/malware DNSBLs — weighted score + delist links.</p>
 
     <div class="tabs">
-      <div class="tab active" data-tab="single">Single</div>
+      <div class="tab active" data-tab="single">Analyze</div>
       <div class="tab" data-tab="bulk">Bulk list</div>
     </div>
 
-    <!-- SINGLE -->
+    <!-- ANALYZE -->
     <section id="single-pane">
       <form id="single-form">
-        <input type="text" id="q" placeholder="example.com" autocomplete="off" autofocus />
-        <button id="go" type="submit">Check</button>
+        <input type="text" id="q" placeholder="analyze a domain or IP — e.g. example.com" autocomplete="off" autofocus />
+        <button id="go" type="submit">▶ Analyze</button>
       </form>
+      <p class="hint2">Blacklists across 90+ DNSBL/URIBL zones · SPF / DKIM / DMARC health · risk score · recommendations</p>
       <div id="single-out"></div>
     </section>
 
@@ -143,7 +196,7 @@ mail.contoso.org"></textarea>
   </div>
 
   <script>
-    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const scoreColor = (s) => (s >= 85 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)');
 
     // ---- tabs ----
@@ -168,10 +221,11 @@ mail.contoso.org"></textarea>
       const domain = q.value.trim();
       if (!domain) return;
       go.disabled = true;
-      sOut.innerHTML = '<div class="card"><span class="spinner"></span> Querying DNSBLs…</div>';
+      sOut.innerHTML = '<div class="card"><span class="spinner"></span> Analyzing ' + esc(domain)
+        + ' — resolving, auth health, and 90+ blacklists…</div>';
       try {
-        const res = await fetch('/api/check?domain=' + encodeURIComponent(domain));
-        renderSingle(await res.json());
+        const res = await fetch('/api/analyze?domain=' + encodeURIComponent(domain));
+        renderAnalyze(await res.json());
       } catch (err) {
         sOut.innerHTML = '<div class="card err">Request failed: ' + esc(err.message) + '</div>';
       } finally {
@@ -179,43 +233,152 @@ mail.contoso.org"></textarea>
       }
     });
 
-    function renderSingle(d) {
-      if (!d.ok) { sOut.innerHTML = '<div class="card err">✗ ' + esc(d.error) + '</div>'; return; }
-      let h = '<div class="card"><div class="top">';
-      h += '<div class="score" style="border-color:' + scoreColor(d.score) + '">' + d.score + '</div>';
-      h += '<div><span class="badge b-' + d.verdict + '">' + esc(d.verdict) + '</span>';
-      h += '<div class="meta">' + esc(d.domain) + ' · ' + d.counts.listed + ' listed · ' + d.counts.clean
-        + ' clean · ' + d.counts.unknown + ' unknown · ' + d.tookMs + 'ms' + (d.cached ? ' · cached' : '') + '</div></div></div>';
-      h += '<div class="dns"><div><b>A</b> ' + (d.dns.a.join(', ') || '—') + '</div>';
-      if (d.dns.aaaa.length) h += '<div><b>AAAA</b> ' + d.dns.aaaa.join(', ') + '</div>';
-      h += '<div><b>MX</b> ' + (d.dns.mx.join(', ') || '—') + '</div></div>';
-      h += renderListings(d);
-      h += '</div>';
-      sOut.innerHTML = h;
+    let report = null;          // full /api/analyze response
+    let showOnlyProblems = false;
+    let blCategory = 'all';
+
+    const CATS = [
+      { key: 'all', label: 'All' }, { key: 'email', label: 'Email / Cold Send' },
+      { key: 'domain', label: 'Domain / URI' }, { key: 'ip', label: 'IP Reputation' },
+      { key: 'spam', label: 'Spam / Phishing' }, { key: 'malware', label: 'Malware' },
+    ];
+    const AUTH_ST = { pass: 'st-ok', warn: 'st-timeout', missing: 'st-listed', unknown: 'st-timeout', fail: 'st-listed' };
+
+    function riskColor(s) { return s >= 80 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)'; }
+    function gauge(score) {
+      const r = 40, c = 2 * Math.PI * r, off = c * (1 - score / 100);
+      return '<svg width="96" height="96" viewBox="0 0 96 96" class="gauge">'
+        + '<circle cx="48" cy="48" r="' + r + '" stroke="var(--line)" stroke-width="7" fill="none"/>'
+        + '<circle cx="48" cy="48" r="' + r + '" stroke="' + riskColor(score) + '" stroke-width="7" fill="none"'
+        + ' stroke-linecap="round" stroke-dasharray="' + c + '" stroke-dashoffset="' + off + '"'
+        + ' transform="rotate(-90 48 48)"/>'
+        + '<text x="48" y="46" text-anchor="middle" class="g-num">' + score + '</text>'
+        + '<text x="48" y="62" text-anchor="middle" class="g-lbl">RISK</text></svg>';
     }
-    function renderListings(d) {
+
+    function renderAnalyze(d) {
+      if (!d.ok) { sOut.innerHTML = '<div class="card err">✗ ' + esc(d.error) + '</div>'; return; }
+      report = d;
+      const bl = d.blacklist;
       let h = '';
-      if (d.listings.length) {
-        h += '<h3>Listings</h3>';
-        for (const l of d.listings) {
-          const cls = { critical: 'crit', high: 'high', medium: 'med', low: 'low' }[l.severity] || 'med';
-          h += '<div class="row ' + cls + '"><div class="z">' + esc(l.subject) + ' <span class="sev">on '
-            + esc(l.zone) + ' · ' + esc(l.severity) + '</span></div>';
-          if (l.meanings && l.meanings.length) h += '<div class="n">' + esc(l.meanings.join('; ')) + '</div>';
-          else if (l.note) h += '<div class="n">' + esc(l.note) + '</div>';
-          if (l.delist) h += '<div><a href="' + esc(l.delist) + '" target="_blank" rel="noopener">Delisting →</a></div>';
-          h += '</div>';
+
+      // --- summary card: gauge + standing ---
+      h += '<div class="card"><div class="top">';
+      h += '<div class="gauge-wrap">' + gauge(d.riskScore) + '<div class="standing" style="color:' + riskColor(d.riskScore) + '">'
+        + esc((d.standing || '').toUpperCase()) + '</div></div>';
+      h += '<div style="flex:1"><div class="meta">Analyzing <b>' + esc(d.domain) + '</b> which resolves to <b>'
+        + esc((d.resolvesTo || []).join(', ') || '—') + '</b> against <b>' + bl.zonesChecked + '</b> known blacklists</div>';
+      h += '<div class="meta">Listed <b class="txt-bad">' + bl.listedCount + '</b> · '
+        + '<b class="txt-warn">' + bl.timeoutCount + '</b> timeout/unknown · ' + bl.okCount + ' clean'
+        + (d.auth ? ' · auth score <b>' + d.auth.score + '/100</b>' : '') + ' · ' + d.tookMs + 'ms</div>';
+      h += '<div class="dns"><div><b>A</b> ' + (esc(d.dns.a.join(', ')) || '—') + '</div>'
+        + (d.dns.aaaa.length ? '<div><b>AAAA</b> ' + esc(d.dns.aaaa.join(', ')) + '</div>' : '')
+        + '<div><b>MX</b> ' + (esc(d.dns.mx.join(', ')) || '—') + '</div></div>';
+      h += '</div></div>';
+
+      // --- auth cards ---
+      if (d.auth) h += renderAuth(d.auth);
+
+      // --- recommendations ---
+      if (d.recommendations && d.recommendations.length) {
+        h += '<h3>Recommendations <span class="mini">(' + d.recommendations.length + ')</span></h3>';
+        for (const r of d.recommendations) {
+          h += '<div class="rec ' + ({critical:'crit',high:'high',medium:'med',low:'low'}[r.severity]||'med') + '">'
+            + '<div class="rec-t"><span class="sev-dot ' + r.severity + '"></span>' + esc(r.title)
+            + ' <span class="sev">' + esc(r.severity) + '</span></div>'
+            + '<div class="n">' + esc(r.detail) + (r.action ? ' <a href="' + esc(r.action.url) + '" target="_blank" rel="noopener">' + esc(r.action.label) + ' →</a>' : '') + '</div></div>';
         }
-      } else {
-        h += '<h3>Listings</h3><p class="empty">No blacklist hits. 🎉</p>';
       }
-      if (d.unknowns && d.unknowns.length) {
-        h += '<h3>Unknown <span class="warn">(timeout/blocked — not clean)</span></h3>';
-        for (const u of d.unknowns)
-          h += '<div class="row med"><div class="z">' + esc(u.subject || '') + ' <span class="sev">' + esc(u.zone)
-            + '</span></div><div class="n">' + esc(u.reason) + '</div></div>';
-      }
+
+      // --- blacklist section ---
+      h += '<div class="tbl-head"><h3 style="margin:0">Blacklists <span class="mini">' + bl.zonesChecked + ' lists · '
+        + bl.listedCount + ' listed</span></h3>'
+        + '<label class="toggle"><input type="checkbox" id="only-problems"' + (showOnlyProblems ? ' checked' : '')
+        + '> only listed / timeouts</label></div>';
+      h += '<div class="cat-tabs" id="cat-tabs">' + CATS.map((c) =>
+        '<span class="cat' + (blCategory === c.key ? ' active' : '') + '" data-cat="' + c.key + '">' + esc(c.label) + '</span>').join('') + '</div>';
+      h += '<div class="table-scroll" id="bl-table">' + renderBlTable(bl) + '</div>';
+
+      // --- signals (ESP-sourced, not connected) ---
+      h += renderSignals(d.signals);
+
+      sOut.innerHTML = h;
+      wireAnalyze();
+    }
+
+    function renderAuth(a) {
+      const card = (label, st, big, sub) => {
+        const cls = AUTH_ST[st] || 'st-timeout';
+        return '<div class="auth ' + cls + '"><div class="auth-l">' + label + '</div>'
+          + '<div class="auth-v">' + esc(big) + '</div><div class="mini">' + esc(sub || '') + '</div></div>';
+      };
+      const spf = a.spf, dkim = a.dkim, dmarc = a.dmarc;
+      let h = '<h3>Authentication health</h3><div class="auth-grid">';
+      h += card('SPF', spf.status, spf.present ? (spf.status === 'pass' ? 'PASS' : 'WARN') : 'MISSING',
+        spf.present ? (spf.policy || '') + (spf.lookups != null ? ' · ' + spf.lookups + ' lookups' : '') : 'no SPF record');
+      h += card('DKIM', dkim.status, dkim.present ? 'PASS' : 'NONE',
+        dkim.present ? dkim.selectors.map((s) => s.selector).join(', ') : 'no common selector found');
+      h += card('DMARC', dmarc.status, dmarc.present ? (dmarc.policy === 'reject' ? 'PASS' : 'WEAK') : 'MISSING',
+        dmarc.present ? 'p=' + dmarc.policy : 'no DMARC record');
+      if (a.mx) h += card('MX', a.mx.status, a.mx.present ? String(a.mx.records.length) : 'NONE',
+        a.mx.present ? a.mx.records[0].exchange : 'no MX');
+      if (a.ptr) h += card('PTR / rDNS', a.ptr.status, a.ptr.status === 'pass' ? 'VALID' : 'CHECK',
+        (a.ptr.records[0] && a.ptr.records[0].host) || 'no reverse DNS');
+      h += '</div>';
       return h;
+    }
+
+    function renderSignals(signals) {
+      if (!signals || !signals.length) return '';
+      let h = '<h3>Engagement & reputation signals <span class="mini">(needs ESP/MTA integration)</span></h3><div class="sig-grid">';
+      for (const s of signals) {
+        h += '<div class="sig"><div class="auth-l">' + esc(s.label) + '</div>'
+          + '<div class="auth-v ' + (s.connected ? '' : 'muted') + '">' + (s.connected ? esc(String(s.value)) + esc(s.unit) : 'not connected') + '</div>'
+          + '<div class="mini">' + esc(s.source) + ' · ' + esc(s.cadence) + '</div></div>';
+      }
+      h += '</div>';
+      return h;
+    }
+
+    const STATE_ICON = { listed: '✗', ok: '✓', timeout: '!' };
+    const STATE_CLS = { listed: 'st-listed', ok: 'st-ok', timeout: 'st-timeout' };
+    const STATE_LABEL = { listed: 'LISTED', ok: 'OK', timeout: 'TIMEOUT' };
+
+    function renderBlTable(bl) {
+      let rows = bl.table;
+      if (blCategory !== 'all') rows = rows.filter((r) => r.category === blCategory);
+      if (showOnlyProblems) rows = rows.filter((r) => r.state !== 'ok');
+      let h = '<table class="bl"><thead><tr><th>Status</th><th>Blacklist</th><th>Reason</th>'
+        + '<th class="num">TTL</th><th class="num">Resp</th></tr></thead><tbody>';
+      if (!rows.length) h += '<tr><td colspan="5" class="empty" style="padding:14px">No lists in this view.</td></tr>';
+      for (const r of rows) {
+        const reason = r.state === 'listed'
+          ? esc(r.reason) + (r.delist ? ' <a href="' + esc(r.delist) + '" target="_blank" rel="noopener">Delist →</a>' : '')
+          : (r.state === 'timeout' ? '<span class="mini">' + esc(r.reason) + '</span>' : '');
+        const tag = r.catalogStatus && r.catalogStatus !== 'live'
+          ? ' <span class="pill">' + esc(r.catalogStatus) + '</span>' : '';
+        h += '<tr class="' + STATE_CLS[r.state] + '">'
+          + '<td class="st"><span class="dot">' + STATE_ICON[r.state] + '</span>' + STATE_LABEL[r.state] + '</td>'
+          + '<td>' + esc(r.name) + ' <span class="pill cat-pill">' + esc(r.category) + '</span>' + tag + '</td>'
+          + '<td>' + reason + '</td>'
+          + '<td class="num">' + (r.ttl ?? '') + '</td>'
+          + '<td class="num">' + (r.responseMs ?? '') + '</td></tr>';
+      }
+      h += '</tbody></table>';
+      return h;
+    }
+
+    function wireAnalyze() {
+      const cb = document.getElementById('only-problems');
+      if (cb) cb.addEventListener('change', () => {
+        showOnlyProblems = cb.checked;
+        document.getElementById('bl-table').innerHTML = renderBlTable(report.blacklist);
+      });
+      document.querySelectorAll('#cat-tabs .cat').forEach((el) => el.addEventListener('click', () => {
+        blCategory = el.dataset.cat;
+        document.querySelectorAll('#cat-tabs .cat').forEach((x) => x.classList.toggle('active', x === el));
+        document.getElementById('bl-table').innerHTML = renderBlTable(report.blacklist);
+      }));
     }
 
     // ================= BULK =================
@@ -355,7 +518,11 @@ mail.contoso.org"></textarea>
 
     function toCsv(results) {
       const head = ['input', 'domain', 'verdict', 'score', 'listed', 'clean', 'unknown', 'a_records', 'listings', 'error'];
-      const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      const cell = (v) => {
+        let s = String(v ?? '');
+        if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // block spreadsheet formula injection
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
       const lines = [head.join(',')];
       for (const r of results) {
         const row = r.ok
