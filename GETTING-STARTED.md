@@ -55,6 +55,9 @@ npm start
   Pabe: risk score, SPF/DKIM/DMARC health, recommendations, ar 69 blacklist er full table.
 - **Bulk list tab** — onek domain ekshathe (each line e ekta), ba ekta `.txt`/`.csv`
   upload koro → **Check all** → result table + **Download CSV**.
+- **API tab** — tomar nijer app/script theke ei tool use korte chaile ready code
+  copy koro: cURL, JavaScript, Python, PHP, Go, Ruby, Java, C# — protita endpoint er
+  jonno. Kono API key lage na.
 
 ### Command line theke o cholbe (server chara)
 ```
@@ -194,16 +197,29 @@ Spamhaus > Barracuda > SORBS." — ei line er mane ki?**
   (informational, ekhon defunct) khub kom effect. Tai final score ekta list er
   gurutto onujayi hisheb hoy.
 
-**TIMEOUT keno hoy?**
-1. **Public resolver block** — Spamhaus/Barracuda/Abusix/invaluement er moto list
-   8.8.8.8 / 1.1.1.1 diye query korle uttor dey na (key/authorization lage). Egulo
-   "requires key (unverified)" hisebe timeout dekhabe — eta **thik**, fake clean na.
-2. **Defunct list** — kichu list (SORBS, MSRBL, DRMX, HIL) bondho hoye geche.
-3. **Rate limit / slow network** — ek shathe onek query dile ba network slow hole.
-4. Local laptop e onek TIMEOUT dekha **normal**. Production e **nijer Unbound
-   resolver + Spamhaus free DQS key** (`DBC_TRUST_KEYED=true`) dile egulo kome jabe.
+**TIMEOUT ar SKIPPED — parthokko ki? (tomar prosno: timeout keno hoy)**
+Ekhon **timeout prai 0** dekhabe. Ki kore korlam:
+- Je list gulo query korle uttor dey (live), tara timeout hole **nije theke retry**
+  hoy — tai slow-but-alive list-o uttor dey.
+- Je list gulo **bondho (defunct)** — SORBS, MSRBL, DRMX, HIL — ba **key/nijer
+  resolver chara uttor dey na** (Spamhaus, Barracuda, Abusix, invaluement, SpamRats)
+  — segulo ke amra **query-i kori na**. Egulo **"SKIPPED"** dekhabe ("list inactive"
+  ba "needs key"), **TIMEOUT na**. Karon mora list e query kore timeout dekhano
+  ortho-hin.
+- Result e ekhon: **Listed / Clean / Timeout (~0) / Skipped**.
 
-> **Mne rakho:** TIMEOUT = "janina", CLEAN na. Eta feature, bug na.
+**Skipped list gulo-o cek korte chao?** (jemon Spamhaus, SpamRats)
+- Egulor jonno **nijer recursive resolver (Unbound)** ba **Spamhaus free DQS key**
+  lage. Setup kore `.env` e dao:
+  ```
+  DBC_RESOLVERS=127.0.0.1
+  DBC_TRUST_KEYED=true
+  ```
+  Tokhon oi list gulo-o query hobe (mxtoolbox er moto — karon tader-o authorized
+  access ache)।
+
+> **Mne rakho:** TIMEOUT = "janina" (CLEAN na). SKIPPED = "cek korini" (dead/key lage).
+> Duita-i honest — kono list ke bhul kore "clean" boli na.
 
 **`.env` file e ki korte hobe?**
 - Kichu na — already `DBC_RESOLVERS=1.1.1.1` set kora ache, app cholbe.

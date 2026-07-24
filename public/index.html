@@ -126,6 +126,8 @@
     tr.st-listed td.st { color: var(--bad); } tr.st-listed td.st .dot { background: var(--bad); }
     tr.st-ok td.st { color: var(--clean); } tr.st-ok td.st .dot { background: var(--clean); }
     tr.st-timeout td.st { color: var(--listed); } tr.st-timeout td.st .dot { background: var(--listed); }
+    tr.st-skipped td.st { color: var(--unknown); } tr.st-skipped td.st .dot { background: var(--unknown); }
+    tr.st-skipped { opacity: .72; }
     tr.st-listed { background: rgba(248,81,73,.05); }
     table.bl td a { color: var(--accent); margin-left: 6px; }
     .pill { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted);
@@ -168,6 +170,33 @@
     .cat:hover { color: var(--fg); border-color: var(--muted); }
     .cat.active { color: #fff; border-color: transparent; background: linear-gradient(180deg, var(--accent), #3f7ff0); box-shadow: 0 2px 8px rgba(63,127,240,.35); }
     .cat-pill { text-transform: uppercase; }
+    /* API tab */
+    .api-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+    .api-base { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; display: flex; flex-direction: column; gap: 5px; }
+    .api-base input { font-size: 13px; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line2); background: var(--bg2); color: var(--fg); min-width: 250px; font-family: ui-monospace, monospace; text-transform: none; letter-spacing: 0; }
+    .lang-bar { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 4px; }
+    .lang { font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 9px; border: 1px solid var(--line2); color: var(--muted); cursor: pointer; transition: all .13s; }
+    .lang:hover { color: var(--fg); border-color: var(--muted); }
+    .lang.active { color: #fff; border-color: transparent; background: linear-gradient(180deg, var(--accent), #3f7ff0); box-shadow: 0 2px 8px rgba(63,127,240,.35); }
+    .ep.card { padding: 18px 20px; }
+    .ep-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .m { font-size: 11px; font-weight: 800; letter-spacing: .03em; padding: 3px 9px; border-radius: 6px; }
+    .m-GET { background: rgba(53,196,106,.16); color: var(--clean); }
+    .m-POST { background: rgba(91,157,255,.16); color: var(--accent); }
+    .ep-path { font-family: ui-monospace, monospace; font-size: 13.5px; color: var(--fg); overflow-wrap: anywhere; }
+    .ep-title { font-weight: 700; margin-top: 10px; }
+    .ep-desc { color: var(--muted); font-size: 13.5px; margin: 3px 0 12px; }
+    .code-wrap { position: relative; }
+    .code-wrap pre, .resp pre { margin: 0; background: #080b11; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; }
+    .code-wrap code, .resp code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: #cdd8ea; white-space: pre; }
+    .copy { position: absolute; top: 8px; right: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; border-radius: 7px; background: var(--card2); border: 1px solid var(--line2); color: var(--fg); box-shadow: none; }
+    .copy:hover:not(:disabled) { border-color: var(--accent); transform: none; box-shadow: none; }
+    .resp { margin-top: 12px; }
+    .resp summary { cursor: pointer; color: var(--muted); font-size: 12.5px; user-select: none; }
+    .resp summary:hover { color: var(--fg); }
+    .resp pre { margin-top: 8px; }
+    .api-note ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.75; }
+    .api-note code, .ep-desc code { background: rgba(255,255,255,.07); padding: 1px 6px; border-radius: 4px; color: #cdd8ea; }
     footer { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff;
       border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; }
@@ -184,6 +213,7 @@
     <div class="tabs">
       <div class="tab active" data-tab="single">Analyze</div>
       <div class="tab" data-tab="bulk">Bulk list</div>
+      <div class="tab" data-tab="api">API</div>
     </div>
 
     <!-- ANALYZE -->
@@ -214,6 +244,30 @@ mail.contoso.org"></textarea>
       <div id="bulk-out"></div>
     </section>
 
+    <!-- API -->
+    <section id="api-pane" class="hidden">
+      <div class="api-head">
+        <div>
+          <h3 style="margin:0 0 4px">API Reference</h3>
+          <p class="hint2" style="margin:0">Every check is a simple HTTP request — no key needed. Pick your language, copy, done.</p>
+        </div>
+        <label class="api-base">Base URL
+          <input type="text" id="api-base" value="http://localhost:3000" spellcheck="false" />
+        </label>
+      </div>
+      <div class="lang-bar" id="lang-bar"></div>
+      <div id="api-endpoints"></div>
+      <div class="card api-note">
+        <b>Notes</b>
+        <ul>
+          <li><code>verdict</code>: <code>clean</code> · <code>listed</code> · <code>blacklisted</code> (a critical/Spamhaus hit) · <code>unknown</code> (only timeouts).</li>
+          <li>A row's <code>state</code> is <code>listed</code> / <code>ok</code> / <code>timeout</code>. A <b>timeout is never treated as clean</b>.</li>
+          <li>Rate limit: <code>DBC_RATE_MAX</code> requests/min per IP (default 30). Bulk costs more, in proportion to the domain count. A 429 means slow down.</li>
+          <li>Bulk is capped at <code>DBC_BULK_MAX</code> domains (default 500); add <code>?format=csv</code> to get a CSV download.</li>
+        </ul>
+      </div>
+    </section>
+
     <footer>
       Timeouts are reported as <b>unknown</b>, never as clean. Weighted score: Spamhaus &gt; Barracuda &gt; SORBS.
     </footer>
@@ -224,14 +278,133 @@ mail.contoso.org"></textarea>
     const scoreColor = (s) => (s >= 85 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)');
 
     // ---- tabs ----
+    const PANES = { single: 'single-pane', bulk: 'bulk-pane', api: 'api-pane' };
+    let apiRendered = false;
     document.querySelectorAll('.tab').forEach((t) => {
       t.addEventListener('click', () => {
         document.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
         t.classList.add('active');
-        const bulk = t.dataset.tab === 'bulk';
-        document.getElementById('bulk-pane').classList.toggle('hidden', !bulk);
-        document.getElementById('single-pane').classList.toggle('hidden', bulk);
+        const active = t.dataset.tab;
+        for (const [tab, id] of Object.entries(PANES)) {
+          document.getElementById(id).classList.toggle('hidden', tab !== active);
+        }
+        if (active === 'api' && !apiRendered) { renderApi(); apiRendered = true; }
       });
+    });
+
+    // ================= API REFERENCE =================
+    const API_ENDPOINTS = [
+      { method: 'GET', path: '/api/analyze', q: 'domain=example.com',
+        title: 'Full deliverability report',
+        desc: 'Risk score, SPF/DKIM/DMARC health, all blacklists and recommendations in one call.',
+        resp: '{\n  "ok": true,\n  "domain": "example.com",\n  "riskScore": 82,\n  "standing": "good standing",\n  "auth": { "score": 59, "spf": {…}, "dkim": {…}, "dmarc": {…} },\n  "blacklist": { "listedCount": 2, "zonesChecked": 69, "table": [ … ] },\n  "recommendations": [ { "severity": "high", "title": "No SPF record", … } ]\n}' },
+      { method: 'GET', path: '/api/check', q: 'domain=example.com',
+        title: 'Blacklist check',
+        desc: 'Full per-blacklist results table — each row is listed / ok / timeout, with TTL and response time.',
+        resp: '{\n  "ok": true,\n  "domain": "example.com",\n  "score": 95,\n  "verdict": "listed",\n  "listedCount": 1,\n  "table": [ { "name": "Spamhaus ZEN", "state": "ok", "ttl": null, "responseMs": 34 }, … ]\n}' },
+      { method: 'POST', path: '/api/check/bulk', body: { domains: ['example.com', 'test.org'] },
+        title: 'Bulk check',
+        desc: 'Check many domains at once. Body can be { "domains": [...] }, { "text": "one per line" }, or a raw text/CSV body. Add ?format=csv for a CSV download.',
+        resp: '{\n  "ok": true,\n  "summary": { "total": 2, "clean": 1, "listed": 1, "blacklisted": 0 },\n  "results": [ { "domain": "example.com", "verdict": "clean", "score": 100 }, … ]\n}' },
+      { method: 'GET', path: '/api/auth', q: 'domain=example.com',
+        title: 'Authentication health',
+        desc: 'SPF, DKIM, DMARC, MX and PTR only. Add &selector=<sel> for an exact DKIM selector.',
+        resp: '{\n  "ok": true,\n  "domain": "example.com",\n  "score": 59,\n  "spf": { "present": true, "policy": "softfail (~all)" },\n  "dkim": { "present": true, "selectors": [ … ] },\n  "dmarc": { "present": true, "policy": "reject" }\n}' },
+      { method: 'GET', path: '/api/zones',
+        title: 'Blacklist catalog',
+        desc: 'All zones we query, with category, weight and severity.',
+        resp: '{\n  "count": 69,\n  "categories": [ { "key": "all", "label": "All" }, … ],\n  "zones": [ { "name": "Spamhaus ZEN", "zone": "zen.spamhaus.org", "category": "email", "severity": "critical" }, … ]\n}' },
+      { method: 'GET', path: '/api/history', q: 'domain=example.com',
+        title: 'Check history',
+        desc: 'Past checks for a domain, newest first. Requires DATABASE_URL to be configured.',
+        resp: '{\n  "ok": true,\n  "domain": "example.com",\n  "count": 3,\n  "checks": [ { "score": 95, "verdict": "listed", "created_at": "…" }, … ]\n}' },
+      { method: 'GET', path: '/api/health',
+        title: 'Health check',
+        desc: 'Liveness, zone count and whether a database is connected.',
+        resp: '{ "status": "ok", "zones": 69, "db": false }' },
+    ];
+
+    const fullUrl = (base, ep) => base + ep.path + (ep.q ? '?' + ep.q : '');
+    const bodyJson = (ep) => JSON.stringify(ep.body);
+
+    const GEN = {
+      'cURL': (ep, base) => ep.method === 'GET'
+        ? 'curl "' + fullUrl(base, ep) + '"'
+        : ['curl -X POST "' + base + ep.path + '" \\', '  -H "Content-Type: application/json" \\', "  -d '" + bodyJson(ep) + "'"].join('\n'),
+
+      'JavaScript': (ep, base) => ep.method === 'GET'
+        ? ['const res = await fetch("' + fullUrl(base, ep) + '");', 'const data = await res.json();', 'console.log(data);'].join('\n')
+        : ['const res = await fetch("' + base + ep.path + '", {', '  method: "POST",', '  headers: { "Content-Type": "application/json" },', '  body: JSON.stringify(' + bodyJson(ep) + ')', '});', 'const data = await res.json();', 'console.log(data);'].join('\n'),
+
+      'Python': (ep, base) => ep.method === 'GET'
+        ? ['import requests', '', 'r = requests.get("' + fullUrl(base, ep) + '")', 'print(r.json())'].join('\n')
+        : ['import requests', '', 'r = requests.post("' + base + ep.path + '", json=' + bodyJson(ep) + ')', 'print(r.json())'].join('\n'),
+
+      'PHP': (ep, base) => ep.method === 'GET'
+        ? ['<?php', '$ch = curl_init("' + fullUrl(base, ep) + '");', 'curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);', '$data = json_decode(curl_exec($ch), true);', 'curl_close($ch);', 'print_r($data);'].join('\n')
+        : ['<?php', '$ch = curl_init("' + base + ep.path + '");', 'curl_setopt_array($ch, [', '    CURLOPT_RETURNTRANSFER => true,', '    CURLOPT_POST => true,', '    CURLOPT_HTTPHEADER => ["Content-Type: application/json"],', "    CURLOPT_POSTFIELDS => '" + bodyJson(ep) + "',", ']);', '$data = json_decode(curl_exec($ch), true);', 'curl_close($ch);', 'print_r($data);'].join('\n'),
+
+      'Go': (ep, base) => ep.method === 'GET'
+        ? ['package main', '', 'import (', '\t"fmt"', '\t"io"', '\t"net/http"', ')', '', 'func main() {', '\tresp, err := http.Get("' + fullUrl(base, ep) + '")', '\tif err != nil {', '\t\tpanic(err)', '\t}', '\tdefer resp.Body.Close()', '\tbody, _ := io.ReadAll(resp.Body)', '\tfmt.Println(string(body))', '}'].join('\n')
+        : ['package main', '', 'import (', '\t"bytes"', '\t"fmt"', '\t"io"', '\t"net/http"', ')', '', 'func main() {', '\tpayload := []byte("' + bodyJson(ep).replace(/"/g, '\\"') + '")', '\tresp, err := http.Post("' + base + ep.path + '", "application/json", bytes.NewBuffer(payload))', '\tif err != nil {', '\t\tpanic(err)', '\t}', '\tdefer resp.Body.Close()', '\tbody, _ := io.ReadAll(resp.Body)', '\tfmt.Println(string(body))', '}'].join('\n'),
+
+      'Ruby': (ep, base) => ep.method === 'GET'
+        ? ['require "net/http"', 'require "json"', '', 'res = Net::HTTP.get(URI("' + fullUrl(base, ep) + '"))', 'puts JSON.parse(res)'].join('\n')
+        : ['require "net/http"', 'require "json"', '', 'uri = URI("' + base + ep.path + '")', "res = Net::HTTP.post(uri, '" + bodyJson(ep) + "', \"Content-Type\" => \"application/json\")", 'puts JSON.parse(res.body)'].join('\n'),
+
+      'Java': (ep, base) => {
+        const head = ['import java.net.URI;', 'import java.net.http.HttpClient;', 'import java.net.http.HttpRequest;', 'import java.net.http.HttpResponse;', '', 'HttpClient client = HttpClient.newHttpClient();'];
+        const tail = ['HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());', 'System.out.println(response.body());'];
+        const req = ep.method === 'GET'
+          ? ['HttpRequest request = HttpRequest.newBuilder()', '    .uri(URI.create("' + fullUrl(base, ep) + '"))', '    .build();']
+          : ['HttpRequest request = HttpRequest.newBuilder()', '    .uri(URI.create("' + base + ep.path + '"))', '    .header("Content-Type", "application/json")', '    .POST(HttpRequest.BodyPublishers.ofString("' + bodyJson(ep).replace(/"/g, '\\"') + '"))', '    .build();'];
+        return head.concat(req, tail).join('\n');
+      },
+
+      'C#': (ep, base) => ep.method === 'GET'
+        ? ['using System;', 'using System.Net.Http;', '', 'using var client = new HttpClient();', 'string json = await client.GetStringAsync("' + fullUrl(base, ep) + '");', 'Console.WriteLine(json);'].join('\n')
+        : ['using System;', 'using System.Net.Http;', 'using System.Text;', '', 'using var client = new HttpClient();', 'var content = new StringContent(@"' + bodyJson(ep).replace(/"/g, '""') + '", Encoding.UTF8, "application/json");', 'var response = await client.PostAsync("' + base + ep.path + '", content);', 'Console.WriteLine(await response.Content.ReadAsStringAsync());'].join('\n'),
+    };
+
+    let apiLang = 'cURL';
+    let apiSnips = [];
+
+    // Default base URL to wherever the page is served from.
+    (function () {
+      const el = document.getElementById('api-base');
+      if (el && /^https?:/.test(location.origin)) el.value = location.origin;
+    })();
+
+    function renderApi() {
+      const base = (document.getElementById('api-base').value || 'http://localhost:3000').replace(/\/+$/, '');
+      document.getElementById('lang-bar').innerHTML = Object.keys(GEN).map((l) =>
+        '<span class="lang' + (l === apiLang ? ' active' : '') + '" data-lang="' + esc(l) + '">' + esc(l) + '</span>').join('');
+      apiSnips = [];
+      const gen = GEN[apiLang];
+      let h = '';
+      API_ENDPOINTS.forEach((ep, i) => {
+        const code = gen(ep, base);
+        apiSnips.push(code);
+        const path = ep.path + (ep.q ? '?' + ep.q : '');
+        h += '<div class="card ep">';
+        h += '<div class="ep-head"><span class="m m-' + ep.method + '">' + ep.method + '</span><code class="ep-path">' + esc(path) + '</code></div>';
+        h += '<div class="ep-title">' + esc(ep.title) + '</div><div class="ep-desc">' + esc(ep.desc) + '</div>';
+        h += '<div class="code-wrap"><button class="copy" data-idx="' + i + '">Copy</button><pre><code>' + esc(code) + '</code></pre></div>';
+        h += '<details class="resp"><summary>Example response</summary><pre><code>' + esc(ep.resp) + '</code></pre></details>';
+        h += '</div>';
+      });
+      document.getElementById('api-endpoints').innerHTML = h;
+      document.querySelectorAll('#lang-bar .lang').forEach((el) =>
+        el.addEventListener('click', () => { apiLang = el.dataset.lang; renderApi(); }));
+      document.querySelectorAll('#api-endpoints .copy').forEach((btn) =>
+        btn.addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(apiSnips[+btn.dataset.idx]); btn.textContent = 'Copied!'; }
+          catch { btn.textContent = 'Copy failed'; }
+          setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+        }));
+    }
+    document.getElementById('api-base').addEventListener('input', () => {
+      if (!document.getElementById('api-pane').classList.contains('hidden')) renderApi();
     });
 
     // ================= SINGLE =================
@@ -258,8 +431,14 @@ mail.contoso.org"></textarea>
     });
 
     let report = null;          // full /api/analyze response
-    let showOnlyProblems = false;
+    let blStatus = 'all';       // all | listed | timeout | ok | skipped
     let blCategory = 'all';
+
+    const STATUS_FILTERS = [
+      { key: 'all', label: 'All' }, { key: 'listed', label: 'Listed' },
+      { key: 'timeout', label: 'Timeout' }, { key: 'ok', label: 'Clean' },
+      { key: 'skipped', label: 'Skipped' },
+    ];
 
     const CATS = [
       { key: 'all', label: 'All' }, { key: 'email', label: 'Email / Cold Send' },
@@ -301,8 +480,9 @@ mail.contoso.org"></textarea>
         + esc((d.standing || '').toUpperCase()) + '</div></div>';
       h += '<div style="flex:1"><div class="meta">Analyzing <b>' + esc(d.domain) + '</b> which resolves to <b>'
         + esc((d.resolvesTo || []).join(', ') || '—') + '</b> against <b>' + bl.zonesChecked + '</b> known blacklists</div>';
-      h += '<div class="meta">Listed <b class="txt-bad">' + bl.listedCount + '</b> · '
-        + '<b class="txt-warn">' + bl.timeoutCount + '</b> timeout/unknown · ' + bl.okCount + ' clean'
+      h += '<div class="meta">Listed <b class="txt-bad">' + bl.listedCount + '</b> · ' + bl.okCount + ' clean · '
+        + '<b class="txt-warn">' + bl.timeoutCount + '</b> timeout'
+        + (bl.skippedCount ? ' · ' + bl.skippedCount + ' skipped' : '')
         + (d.auth ? ' · auth score <b>' + d.auth.score + '/100</b>' : '') + ' · ' + d.tookMs + 'ms</div>';
       h += '<div class="dns"><div><b>A</b> ' + (esc(d.dns.a.join(', ')) || '—') + '</div>'
         + (d.dns.aaaa.length ? '<div><b>AAAA</b> ' + esc(d.dns.aaaa.join(', ')) + '</div>' : '')
@@ -325,9 +505,12 @@ mail.contoso.org"></textarea>
 
       // --- blacklist section ---
       h += '<div class="tbl-head"><h3 style="margin:0">Blacklists <span class="mini">' + bl.zonesChecked + ' lists · '
-        + bl.listedCount + ' listed</span></h3>'
-        + '<label class="toggle"><input type="checkbox" id="only-problems"' + (showOnlyProblems ? ' checked' : '')
-        + '> only listed / timeouts</label></div>';
+        + bl.listedCount + ' listed</span></h3></div>';
+      // status filter (view one state at a time) + category filter
+      h += '<div class="cat-tabs" id="status-tabs">' + STATUS_FILTERS.map((s) => {
+        const n = s.key === 'all' ? '' : ' ' + (s.key === 'listed' ? bl.listedCount : s.key === 'timeout' ? bl.timeoutCount : s.key === 'ok' ? bl.okCount : bl.skippedCount);
+        return '<span class="cat st-filter' + (blStatus === s.key ? ' active' : '') + '" data-status="' + s.key + '">' + esc(s.label) + n + '</span>';
+      }).join('') + '</div>';
       h += '<div class="cat-tabs" id="cat-tabs">' + CATS.map((c) =>
         '<span class="cat' + (blCategory === c.key ? ' active' : '') + '" data-cat="' + c.key + '">' + esc(c.label) + '</span>').join('') + '</div>';
       h += '<div class="table-scroll" id="bl-table">' + renderBlTable(bl) + '</div>';
@@ -373,21 +556,21 @@ mail.contoso.org"></textarea>
       return h;
     }
 
-    const STATE_ICON = { listed: '✗', ok: '✓', timeout: '!' };
-    const STATE_CLS = { listed: 'st-listed', ok: 'st-ok', timeout: 'st-timeout' };
-    const STATE_LABEL = { listed: 'LISTED', ok: 'OK', timeout: 'TIMEOUT' };
+    const STATE_ICON = { listed: '✗', ok: '✓', timeout: '!', skipped: '–' };
+    const STATE_CLS = { listed: 'st-listed', ok: 'st-ok', timeout: 'st-timeout', skipped: 'st-skipped' };
+    const STATE_LABEL = { listed: 'LISTED', ok: 'OK', timeout: 'TIMEOUT', skipped: 'SKIPPED' };
 
     function renderBlTable(bl) {
       let rows = bl.table;
       if (blCategory !== 'all') rows = rows.filter((r) => r.category === blCategory);
-      if (showOnlyProblems) rows = rows.filter((r) => r.state !== 'ok');
+      if (blStatus !== 'all') rows = rows.filter((r) => r.state === blStatus);
       let h = '<table class="bl"><thead><tr><th>Status</th><th>Blacklist</th><th>Reason</th>'
         + '<th class="num">TTL</th><th class="num">Resp</th></tr></thead><tbody>';
       if (!rows.length) h += '<tr><td colspan="5" class="empty" style="padding:14px">No lists in this view.</td></tr>';
       for (const r of rows) {
         const reason = r.state === 'listed'
           ? esc(r.reason) + (r.delist ? ' <a href="' + esc(r.delist) + '" target="_blank" rel="noopener">Delist →</a>' : '')
-          : (r.state === 'timeout' ? '<span class="mini">' + esc(r.reason) + '</span>' : '');
+          : ((r.state === 'timeout' || r.state === 'skipped') ? '<span class="mini">' + esc(r.reason) + '</span>' : '');
         const tag = r.catalogStatus && r.catalogStatus !== 'live'
           ? ' <span class="pill">' + esc(r.catalogStatus) + '</span>' : '';
         h += '<tr class="' + STATE_CLS[r.state] + '">'
@@ -402,11 +585,11 @@ mail.contoso.org"></textarea>
     }
 
     function wireAnalyze() {
-      const cb = document.getElementById('only-problems');
-      if (cb) cb.addEventListener('change', () => {
-        showOnlyProblems = cb.checked;
+      document.querySelectorAll('#status-tabs .st-filter').forEach((el) => el.addEventListener('click', () => {
+        blStatus = el.dataset.status;
+        document.querySelectorAll('#status-tabs .st-filter').forEach((x) => x.classList.toggle('active', x === el));
         document.getElementById('bl-table').innerHTML = renderBlTable(report.blacklist);
-      });
+      }));
       document.querySelectorAll('#cat-tabs .cat').forEach((el) => el.addEventListener('click', () => {
         blCategory = el.dataset.cat;
         document.querySelectorAll('#cat-tabs .cat').forEach((x) => x.classList.toggle('active', x === el));

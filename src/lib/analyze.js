@@ -56,6 +56,7 @@ export async function analyzeDomain(input, opts = {}) {
       listedCount: bl.listedCount,
       timeoutCount: bl.timeoutCount,
       okCount: bl.okCount,
+      skippedCount: bl.skippedCount,
       listings: bl.table.filter((r) => r.state === 'listed'),
       table: bl.table,
     },
