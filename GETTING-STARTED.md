@@ -103,6 +103,20 @@ History dekhte: `http://localhost:3000/api/history?domain=github.com`.
 
 ---
 
+## 4c. `.env` file — ekbar set, barbar na (tomar prosno)
+
+**Protibar `set DBC_RESOLVERS=...` type korte hobe NA.** Project e ekta `.env`
+file ache — app start howar somoy eta **nije-i porhe**. Tate already ache:
+```
+DBC_RESOLVERS=1.1.1.1
+```
+Tai tumi sudhu `npm start` dilei cholbe. Kichu poriborton korte chaile — jemon
+onno resolver ba `DATABASE_URL` — `.env` file ta **text editor e kholo, value
+paltao, save koro, restart koro**. Bas. (Command prompt e set korle-o hobe, kintu
+`.env` beshi shohoj.)
+
+---
+
 ## 5. Production e valo result er jonno (important)
 
 Ei tool DNS query kore. **Public resolver (8.8.8.8 / 1.1.1.1) Spamhaus block kore**, ar
@@ -164,6 +178,36 @@ Puro list `.env.example` file e ache.
 | `history requires DATABASE_URL` | DB set kora nai. §4 dekho (ba history bad dao). |
 | `db:migrate` e connection refused | Postgres cholche na / DATABASE_URL bhul. §4 dekho. |
 | DKIM "NONE" but domain er DKIM ache | Selector janle: `/api/auth?domain=x.com&selector=<selector>` |
+
+---
+
+## 9. Concept bujho (kichu common prosno)
+
+**"Timeouts are reported as unknown, never as clean. Weighted score:
+Spamhaus > Barracuda > SORBS." — ei line er mane ki?**
+- Ekta blacklist ke jiggesh korle 3 rokom uttor hote pare: **CLEAN** (listed na),
+  **LISTED** (ache), ba **kono uttor nai** (timeout).
+- Onek tool timeout ke bhul kore "clean" dhore ney. **Amra ta kori na** — timeout
+  hole **"unknown"** dekhai, karon uttor na pele "clean" bola bhul.
+- **Weighted score** = shob list er weight soman na. **Spamhaus** (shobcheye
+  important) e listed hole score onek nambe; **Barracuda** majhari; **SORBS**
+  (informational, ekhon defunct) khub kom effect. Tai final score ekta list er
+  gurutto onujayi hisheb hoy.
+
+**TIMEOUT keno hoy?**
+1. **Public resolver block** — Spamhaus/Barracuda/Abusix/invaluement er moto list
+   8.8.8.8 / 1.1.1.1 diye query korle uttor dey na (key/authorization lage). Egulo
+   "requires key (unverified)" hisebe timeout dekhabe — eta **thik**, fake clean na.
+2. **Defunct list** — kichu list (SORBS, MSRBL, DRMX, HIL) bondho hoye geche.
+3. **Rate limit / slow network** — ek shathe onek query dile ba network slow hole.
+4. Local laptop e onek TIMEOUT dekha **normal**. Production e **nijer Unbound
+   resolver + Spamhaus free DQS key** (`DBC_TRUST_KEYED=true`) dile egulo kome jabe.
+
+> **Mne rakho:** TIMEOUT = "janina", CLEAN na. Eta feature, bug na.
+
+**`.env` file e ki korte hobe?**
+- Kichu na — already `DBC_RESOLVERS=1.1.1.1` set kora ache, app cholbe.
+- Sudhu jodi onno resolver/DB/setting lage, tokhon `.env` edit korba (§4c).
 
 ---
 

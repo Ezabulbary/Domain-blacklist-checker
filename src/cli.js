@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Command-line blacklist check:  npm run check example.com
 //   --all   show every blacklist row (default shows listed + timeouts only)
+import { loadEnv } from './lib/env.js';
+loadEnv();
 import { checkDomain } from './lib/check.js';
 
 const args = process.argv.slice(2);

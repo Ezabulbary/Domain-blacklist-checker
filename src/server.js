@@ -1,5 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { loadEnv } from './lib/env.js';
+
+loadEnv(); // read .env before anything reads process.env
+
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { checkDomain } from './lib/check.js';

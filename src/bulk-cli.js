@@ -5,6 +5,8 @@
 //   cat domains.txt | npm run check:bulk
 //   npm run check:bulk -- example.com google.com foo.org
 import { readFileSync } from 'node:fs';
+import { loadEnv } from './lib/env.js';
+loadEnv();
 import { checkMany, resultsToCsv } from './lib/bulk.js';
 
 const argv = process.argv.slice(2);

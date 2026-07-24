@@ -1,7 +1,10 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { loadEnv } from '../lib/env.js';
 import { getPool, closePool } from './pool.js';
+
+loadEnv();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, 'migrations');
