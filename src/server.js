@@ -10,6 +10,7 @@ import { checkDomain } from './lib/check.js';
 import { checkMany, resultsToCsv } from './lib/bulk.js';
 import { analyzeDomain } from './lib/analyze.js';
 import { checkAuth } from './lib/auth.js';
+import { createApiKey, validateApiKey } from './lib/apikeys.js';
 import { buildResolver } from './lib/resolve.js';
 import { ALL_ZONES, CATEGORIES } from './lib/zones.js';
 import { dbEnabled } from './db/pool.js';
@@ -48,11 +49,15 @@ const RATE_MAX = Number(process.env.DBC_RATE_MAX ?? 30);
 const RATE_WINDOW_MS = Number(process.env.DBC_RATE_WINDOW_MS ?? 60 * 1000);
 const hits = new Map(); // ip -> { count, resetAt }
 
+const RATE_MAX_KEYED = Number(process.env.DBC_RATE_MAX_KEYED ?? RATE_MAX * 5);
+const REQUIRE_KEY = process.env.DBC_REQUIRE_KEY === 'true';
+
 let lastSweep = 0;
 // `cost` lets an expensive request (a bulk check fanning out thousands of DNS
-// queries) consume more of the per-IP budget than a single lookup, so bulk
-// can't be used to amplify load or abuse the upstream DNSBLs.
-function rateLimited(ip, cost = 1) {
+// queries) consume more of the budget than a single lookup, so bulk can't be
+// used to amplify load. `id` is the bucket (IP, or the API key) and `max` its
+// budget — authenticated callers get a higher one.
+function rateLimited(id, cost = 1, max = RATE_MAX) {
   const now = Date.now();
   // Periodically drop expired windows so the map can't grow without bound from
   // a stream of distinct client IPs (memory-exhaustion DoS).
@@ -60,13 +65,41 @@ function rateLimited(ip, cost = 1) {
     for (const [k, v] of hits) if (now > v.resetAt) hits.delete(k);
     lastSweep = now;
   }
-  const rec = hits.get(ip);
+  const rec = hits.get(id);
   if (!rec || now > rec.resetAt) {
-    hits.set(ip, { count: cost, resetAt: now + RATE_WINDOW_MS });
-    return cost > RATE_MAX;
+    hits.set(id, { count: cost, resetAt: now + RATE_WINDOW_MS });
+    return cost > max;
   }
   rec.count += cost;
-  return rec.count > RATE_MAX;
+  return rec.count > max;
+}
+
+// Authenticate a request from its optional X-API-Key. Returns false and sends a
+// 401 when a key is invalid, or when DBC_REQUIRE_KEY is on and none was given.
+async function authOk(req, reply) {
+  const key = (req.headers['x-api-key'] || req.query.api_key || '').toString().trim();
+  if (!key) {
+    if (REQUIRE_KEY) {
+      reply.code(401).send({ ok: false, error: 'API key required — send it as the X-API-Key header' });
+      return false;
+    }
+    return true;
+  }
+  const v = await validateApiKey(key);
+  if (!v) {
+    reply.code(401).send({ ok: false, error: 'invalid API key' });
+    return false;
+  }
+  req.apiKey = key;
+  req.apiPlan = v.plan;
+  return true;
+}
+
+// Rate-limit a request, bucketed and budgeted by whether it's authenticated.
+function limited(req, cost = 1) {
+  return req.apiKey
+    ? rateLimited('k:' + req.apiKey, cost, RATE_MAX_KEYED)
+    : rateLimited(req.ip, cost, RATE_MAX);
 }
 
 // Persist a successful check when a database is configured. Never let a DB
@@ -139,13 +172,35 @@ export function buildServer() {
     })),
   }));
 
+  // Generate a new API key. Optional { email } ties it to a user record.
+  app.post('/api/keys', async (req, reply) => {
+    if (rateLimited(req.ip, 5)) {
+      return reply.code(429).send({ ok: false, error: 'too many key requests, slow down' });
+    }
+    const email = req.body && typeof req.body === 'object' ? req.body.email : undefined;
+    try {
+      const r = await createApiKey({ email });
+      return {
+        ok: true,
+        apiKey: r.apiKey,
+        plan: r.plan,
+        persisted: r.persisted,
+        requireKey: REQUIRE_KEY,
+        note: r.persisted
+          ? 'Send this as the X-API-Key header.'
+          : 'Send this as the X-API-Key header. No database is configured, so this key is kept in memory and is lost on restart — set DATABASE_URL to persist keys.',
+      };
+    } catch (e) {
+      return reply.code(500).send({ ok: false, error: e.message });
+    }
+  });
+
   // Unified deliverability report (blacklists + auth + risk + recommendations).
   app.get('/api/analyze', async (req, reply) => {
     const domain = (req.query.domain || '').toString();
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
-    if (rateLimited(req.ip)) {
-      return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
-    }
+    if (!(await authOk(req, reply))) return;
+    if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     return analyzeDomain(domain, { resolver });
   });
 
@@ -153,9 +208,8 @@ export function buildServer() {
   app.get('/api/auth', async (req, reply) => {
     const domain = (req.query.domain || '').toString().trim();
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
-    if (rateLimited(req.ip)) {
-      return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
-    }
+    if (!(await authOk(req, reply))) return;
+    if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     // Guard: only [a-z0-9.-] hostnames / selectors are ever embedded in a DNS
     // name, so arbitrary input can't be used to craft odd lookups.
     const HOST_RE = /^[a-z0-9.-]{1,253}$/i;
@@ -169,6 +223,7 @@ export function buildServer() {
   // Check history for a domain — only when a database is configured.
   app.get('/api/history', async (req, reply) => {
     if (!dbEnabled()) return reply.code(501).send({ ok: false, error: 'history requires DATABASE_URL' });
+    if (!(await authOk(req, reply))) return;
     const domain = (req.query.domain || '').toString().trim();
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
     const limit = Math.min(Number(req.query.limit ?? 20), 100);
@@ -179,11 +234,8 @@ export function buildServer() {
   app.get('/api/check', async (req, reply) => {
     const domain = (req.query.domain || '').toString();
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
-
-    if (rateLimited(req.ip)) {
-      return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
-    }
-
+    if (!(await authOk(req, reply))) return;
+    if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     return checkCached(domain, { resolver });
   });
 
@@ -210,11 +262,12 @@ export function buildServer() {
     if (inputs.length === 0) {
       return reply.code(400).send({ ok: false, error: 'no domains found in request' });
     }
+    if (!(await authOk(req, reply))) return;
 
     // Charge the rate limiter in proportion to the work (each domain fans out
     // to ~100 DNS queries) so bulk can't be used to amplify load.
-    const cost = Math.min(1 + Math.ceil(Math.min(inputs.length, BULK_MAX) / 25), RATE_MAX);
-    if (rateLimited(req.ip, cost)) {
+    const cost = 1 + Math.ceil(Math.min(inputs.length, BULK_MAX) / 25);
+    if (limited(req, cost)) {
       return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     }
 

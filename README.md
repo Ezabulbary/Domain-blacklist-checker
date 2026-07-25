@@ -93,7 +93,18 @@ npm test
 | `POST /api/check/bulk` | **Bulk check**. |
 | `GET /api/zones` | The zone catalog with categories, weights + severities. |
 | `GET /api/history?domain=<input>` | Stored check history (needs `DATABASE_URL`). |
+| `POST /api/keys` | Generate an API key (optional; see below). |
 | `GET /api/health` | Liveness + zone count. |
+
+### API keys (optional)
+
+The API is open by default. `POST /api/keys` (optional `{ "email": "..." }`)
+returns an API key; send it as the `X-API-Key` header to authenticate — keyed
+requests get a higher rate limit (`DBC_RATE_MAX_KEYED`). Set
+`DBC_REQUIRE_KEY=true` to make a key mandatory. Keys persist in the `users` table
+when `DATABASE_URL` is set, otherwise they're kept in memory (lost on restart).
+The web UI's **API** tab has a one-click "Generate API key" button that fills the
+key into every code sample.
 
 ### Deliverability report (`/api/analyze`)
 

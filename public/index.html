@@ -178,6 +178,11 @@
     .lang { font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 9px; border: 1px solid var(--line2); color: var(--muted); cursor: pointer; transition: all .13s; }
     .lang:hover { color: var(--fg); border-color: var(--muted); }
     .lang.active { color: #fff; border-color: transparent; background: linear-gradient(180deg, var(--accent), #3f7ff0); box-shadow: 0 2px 8px rgba(63,127,240,.35); }
+    .key-card { padding: 16px 18px; }
+    .key-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .key-box { display: flex; gap: 8px; margin-top: 12px; }
+    .key-box input { flex: 1; font-family: ui-monospace, monospace; font-size: 13px; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line2); background: var(--bg2); color: var(--clean); }
+    .key-box .ghost { padding: 9px 14px; font-size: 13px; }
     .ep.card { padding: 18px 20px; }
     .ep-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .m { font-size: 11px; font-weight: 800; letter-spacing: .03em; padding: 3px 9px; border-radius: 6px; }
@@ -249,17 +254,32 @@ mail.contoso.org"></textarea>
       <div class="api-head">
         <div>
           <h3 style="margin:0 0 4px">API Reference</h3>
-          <p class="hint2" style="margin:0">Every check is a simple HTTP request — no key needed. Pick your language, copy, done.</p>
+          <p class="hint2" style="margin:0">Every check is a simple HTTP request. An API key is optional — pick your language, copy, done.</p>
         </div>
         <label class="api-base">Base URL
           <input type="text" id="api-base" value="http://localhost:3000" spellcheck="false" />
         </label>
+      </div>
+      <div class="card key-card">
+        <div class="key-row">
+          <div style="flex:1">
+            <div class="auth-l">Your API key</div>
+            <div class="mini" id="key-status">Optional — the API works without a key. Generate one for a higher rate limit, or if the server requires keys (DBC_REQUIRE_KEY).</div>
+          </div>
+          <button id="gen-key" type="button">Generate API key</button>
+        </div>
+        <div id="key-box" class="key-box hidden">
+          <input type="text" id="key-val" readonly spellcheck="false" />
+          <button class="ghost" id="key-copy" type="button">Copy</button>
+          <button class="ghost" id="key-clear" type="button">Clear</button>
+        </div>
       </div>
       <div class="lang-bar" id="lang-bar"></div>
       <div id="api-endpoints"></div>
       <div class="card api-note">
         <b>Notes</b>
         <ul>
+          <li><b>API key (optional):</b> <code>POST /api/keys</code> returns a key; send it as the <code>X-API-Key</code> header for a higher rate limit. The server can require keys with <code>DBC_REQUIRE_KEY=true</code>.</li>
           <li><code>verdict</code>: <code>clean</code> · <code>listed</code> · <code>blacklisted</code> (a critical/Spamhaus hit) · <code>unknown</code> (only timeouts).</li>
           <li>A row's <code>state</code> is <code>listed</code> / <code>ok</code> / <code>timeout</code>. A <b>timeout is never treated as clean</b>.</li>
           <li>Rate limit: <code>DBC_RATE_MAX</code> requests/min per IP (default 30). Bulk costs more, in proportion to the domain count. A 429 means slow down.</li>
@@ -327,53 +347,126 @@ mail.contoso.org"></textarea>
     const fullUrl = (base, ep) => base + ep.path + (ep.q ? '?' + ep.q : '');
     const bodyJson = (ep) => JSON.stringify(ep.body);
 
+    // key = optional API key; when set, snippets include the X-API-Key header.
     const GEN = {
-      'cURL': (ep, base) => ep.method === 'GET'
-        ? 'curl "' + fullUrl(base, ep) + '"'
-        : ['curl -X POST "' + base + ep.path + '" \\', '  -H "Content-Type: application/json" \\', "  -d '" + bodyJson(ep) + "'"].join('\n'),
+      'cURL': (ep, base, key) => {
+        const hk = key ? ' -H "X-API-Key: ' + key + '"' : '';
+        if (ep.method === 'GET') return 'curl' + hk + ' "' + fullUrl(base, ep) + '"';
+        const lines = ['curl -X POST "' + base + ep.path + '"', '-H "Content-Type: application/json"'];
+        if (key) lines.push('-H "X-API-Key: ' + key + '"');
+        lines.push("-d '" + bodyJson(ep) + "'");
+        return lines.join(' \\\n  ');
+      },
 
-      'JavaScript': (ep, base) => ep.method === 'GET'
-        ? ['const res = await fetch("' + fullUrl(base, ep) + '");', 'const data = await res.json();', 'console.log(data);'].join('\n')
-        : ['const res = await fetch("' + base + ep.path + '", {', '  method: "POST",', '  headers: { "Content-Type": "application/json" },', '  body: JSON.stringify(' + bodyJson(ep) + ')', '});', 'const data = await res.json();', 'console.log(data);'].join('\n'),
+      'JavaScript': (ep, base, key) => {
+        const hdr = '{ "Content-Type": "application/json"' + (key ? ', "X-API-Key": "' + key + '"' : '') + ' }';
+        if (ep.method === 'GET') {
+          const opt = key ? ', {\n  headers: { "X-API-Key": "' + key + '" }\n}' : '';
+          return ['const res = await fetch("' + fullUrl(base, ep) + '"' + opt + ');', 'const data = await res.json();', 'console.log(data);'].join('\n');
+        }
+        return ['const res = await fetch("' + base + ep.path + '", {', '  method: "POST",', '  headers: ' + hdr + ',', '  body: JSON.stringify(' + bodyJson(ep) + ')', '});', 'const data = await res.json();', 'console.log(data);'].join('\n');
+      },
 
-      'Python': (ep, base) => ep.method === 'GET'
-        ? ['import requests', '', 'r = requests.get("' + fullUrl(base, ep) + '")', 'print(r.json())'].join('\n')
-        : ['import requests', '', 'r = requests.post("' + base + ep.path + '", json=' + bodyJson(ep) + ')', 'print(r.json())'].join('\n'),
+      'Python': (ep, base, key) => {
+        const hk = key ? ', headers={"X-API-Key": "' + key + '"}' : '';
+        if (ep.method === 'GET') return ['import requests', '', 'r = requests.get("' + fullUrl(base, ep) + '"' + hk + ')', 'print(r.json())'].join('\n');
+        return ['import requests', '', 'r = requests.post("' + base + ep.path + '", json=' + bodyJson(ep) + hk + ')', 'print(r.json())'].join('\n');
+      },
 
-      'PHP': (ep, base) => ep.method === 'GET'
-        ? ['<?php', '$ch = curl_init("' + fullUrl(base, ep) + '");', 'curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);', '$data = json_decode(curl_exec($ch), true);', 'curl_close($ch);', 'print_r($data);'].join('\n')
-        : ['<?php', '$ch = curl_init("' + base + ep.path + '");', 'curl_setopt_array($ch, [', '    CURLOPT_RETURNTRANSFER => true,', '    CURLOPT_POST => true,', '    CURLOPT_HTTPHEADER => ["Content-Type: application/json"],', "    CURLOPT_POSTFIELDS => '" + bodyJson(ep) + "',", ']);', '$data = json_decode(curl_exec($ch), true);', 'curl_close($ch);', 'print_r($data);'].join('\n'),
+      'PHP': (ep, base, key) => {
+        if (ep.method === 'GET') {
+          const lines = ['<?php', '$ch = curl_init("' + fullUrl(base, ep) + '");', 'curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);'];
+          if (key) lines.push('curl_setopt($ch, CURLOPT_HTTPHEADER, ["X-API-Key: ' + key + '"]);');
+          lines.push('$data = json_decode(curl_exec($ch), true);', 'curl_close($ch);', 'print_r($data);');
+          return lines.join('\n');
+        }
+        const hdrs = '["Content-Type: application/json"' + (key ? ', "X-API-Key: ' + key + '"' : '') + ']';
+        return ['<?php', '$ch = curl_init("' + base + ep.path + '");', 'curl_setopt_array($ch, [', '    CURLOPT_RETURNTRANSFER => true,', '    CURLOPT_POST => true,', '    CURLOPT_HTTPHEADER => ' + hdrs + ',', "    CURLOPT_POSTFIELDS => '" + bodyJson(ep) + "',", ']);', '$data = json_decode(curl_exec($ch), true);', 'curl_close($ch);', 'print_r($data);'].join('\n');
+      },
 
-      'Go': (ep, base) => ep.method === 'GET'
-        ? ['package main', '', 'import (', '\t"fmt"', '\t"io"', '\t"net/http"', ')', '', 'func main() {', '\tresp, err := http.Get("' + fullUrl(base, ep) + '")', '\tif err != nil {', '\t\tpanic(err)', '\t}', '\tdefer resp.Body.Close()', '\tbody, _ := io.ReadAll(resp.Body)', '\tfmt.Println(string(body))', '}'].join('\n')
-        : ['package main', '', 'import (', '\t"bytes"', '\t"fmt"', '\t"io"', '\t"net/http"', ')', '', 'func main() {', '\tpayload := []byte("' + bodyJson(ep).replace(/"/g, '\\"') + '")', '\tresp, err := http.Post("' + base + ep.path + '", "application/json", bytes.NewBuffer(payload))', '\tif err != nil {', '\t\tpanic(err)', '\t}', '\tdefer resp.Body.Close()', '\tbody, _ := io.ReadAll(resp.Body)', '\tfmt.Println(string(body))', '}'].join('\n'),
+      'Go': (ep, base, key) => {
+        if (ep.method === 'GET' && !key) {
+          return ['package main', '', 'import (', '\t"fmt"', '\t"io"', '\t"net/http"', ')', '', 'func main() {', '\tresp, err := http.Get("' + fullUrl(base, ep) + '")', '\tif err != nil {', '\t\tpanic(err)', '\t}', '\tdefer resp.Body.Close()', '\tbody, _ := io.ReadAll(resp.Body)', '\tfmt.Println(string(body))', '}'].join('\n');
+        }
+        if (ep.method === 'GET') {
+          return ['package main', '', 'import (', '\t"fmt"', '\t"io"', '\t"net/http"', ')', '', 'func main() {', '\treq, _ := http.NewRequest("GET", "' + fullUrl(base, ep) + '", nil)', '\treq.Header.Set("X-API-Key", "' + key + '")', '\tresp, err := http.DefaultClient.Do(req)', '\tif err != nil {', '\t\tpanic(err)', '\t}', '\tdefer resp.Body.Close()', '\tbody, _ := io.ReadAll(resp.Body)', '\tfmt.Println(string(body))', '}'].join('\n');
+        }
+        const setKey = key ? ['\treq.Header.Set("X-API-Key", "' + key + '")'] : [];
+        return ['package main', '', 'import (', '\t"bytes"', '\t"fmt"', '\t"io"', '\t"net/http"', ')', '', 'func main() {', '\tpayload := []byte("' + bodyJson(ep).replace(/"/g, '\\"') + '")', '\treq, _ := http.NewRequest("POST", "' + base + ep.path + '", bytes.NewBuffer(payload))', '\treq.Header.Set("Content-Type", "application/json")'].concat(setKey, ['\tresp, err := http.DefaultClient.Do(req)', '\tif err != nil {', '\t\tpanic(err)', '\t}', '\tdefer resp.Body.Close()', '\tbody, _ := io.ReadAll(resp.Body)', '\tfmt.Println(string(body))', '}']).join('\n');
+      },
 
-      'Ruby': (ep, base) => ep.method === 'GET'
-        ? ['require "net/http"', 'require "json"', '', 'res = Net::HTTP.get(URI("' + fullUrl(base, ep) + '"))', 'puts JSON.parse(res)'].join('\n')
-        : ['require "net/http"', 'require "json"', '', 'uri = URI("' + base + ep.path + '")', "res = Net::HTTP.post(uri, '" + bodyJson(ep) + "', \"Content-Type\" => \"application/json\")", 'puts JSON.parse(res.body)'].join('\n'),
+      'Ruby': (ep, base, key) => {
+        if (ep.method === 'GET' && !key) return ['require "net/http"', 'require "json"', '', 'res = Net::HTTP.get(URI("' + fullUrl(base, ep) + '"))', 'puts JSON.parse(res)'].join('\n');
+        if (ep.method === 'GET') {
+          return ['require "net/http"', 'require "json"', '', 'uri = URI("' + fullUrl(base, ep) + '")', 'req = Net::HTTP::Get.new(uri)', 'req["X-API-Key"] = "' + key + '"', 'res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https") { |h| h.request(req) }', 'puts JSON.parse(res.body)'].join('\n');
+        }
+        const hdrs = '"Content-Type" => "application/json"' + (key ? ', "X-API-Key" => "' + key + '"' : '');
+        return ['require "net/http"', 'require "json"', '', 'uri = URI("' + base + ep.path + '")', "res = Net::HTTP.post(uri, '" + bodyJson(ep) + "', " + hdrs + ')', 'puts JSON.parse(res.body)'].join('\n');
+      },
 
-      'Java': (ep, base) => {
+      'Java': (ep, base, key) => {
         const head = ['import java.net.URI;', 'import java.net.http.HttpClient;', 'import java.net.http.HttpRequest;', 'import java.net.http.HttpResponse;', '', 'HttpClient client = HttpClient.newHttpClient();'];
         const tail = ['HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());', 'System.out.println(response.body());'];
+        const keyLine = key ? ['    .header("X-API-Key", "' + key + '")'] : [];
         const req = ep.method === 'GET'
-          ? ['HttpRequest request = HttpRequest.newBuilder()', '    .uri(URI.create("' + fullUrl(base, ep) + '"))', '    .build();']
-          : ['HttpRequest request = HttpRequest.newBuilder()', '    .uri(URI.create("' + base + ep.path + '"))', '    .header("Content-Type", "application/json")', '    .POST(HttpRequest.BodyPublishers.ofString("' + bodyJson(ep).replace(/"/g, '\\"') + '"))', '    .build();'];
+          ? ['HttpRequest request = HttpRequest.newBuilder()', '    .uri(URI.create("' + fullUrl(base, ep) + '"))'].concat(keyLine, ['    .build();'])
+          : ['HttpRequest request = HttpRequest.newBuilder()', '    .uri(URI.create("' + base + ep.path + '"))', '    .header("Content-Type", "application/json")'].concat(keyLine, ['    .POST(HttpRequest.BodyPublishers.ofString("' + bodyJson(ep).replace(/"/g, '\\"') + '"))', '    .build();']);
         return head.concat(req, tail).join('\n');
       },
 
-      'C#': (ep, base) => ep.method === 'GET'
-        ? ['using System;', 'using System.Net.Http;', '', 'using var client = new HttpClient();', 'string json = await client.GetStringAsync("' + fullUrl(base, ep) + '");', 'Console.WriteLine(json);'].join('\n')
-        : ['using System;', 'using System.Net.Http;', 'using System.Text;', '', 'using var client = new HttpClient();', 'var content = new StringContent(@"' + bodyJson(ep).replace(/"/g, '""') + '", Encoding.UTF8, "application/json");', 'var response = await client.PostAsync("' + base + ep.path + '", content);', 'Console.WriteLine(await response.Content.ReadAsStringAsync());'].join('\n'),
+      'C#': (ep, base, key) => {
+        const keyLine = key ? ['client.DefaultRequestHeaders.Add("X-API-Key", "' + key + '");'] : [];
+        if (ep.method === 'GET') {
+          return ['using System;', 'using System.Net.Http;', '', 'using var client = new HttpClient();'].concat(keyLine, ['string json = await client.GetStringAsync("' + fullUrl(base, ep) + '");', 'Console.WriteLine(json);']).join('\n');
+        }
+        return ['using System;', 'using System.Net.Http;', 'using System.Text;', '', 'using var client = new HttpClient();'].concat(keyLine, ['var content = new StringContent(@"' + bodyJson(ep).replace(/"/g, '""') + '", Encoding.UTF8, "application/json");', 'var response = await client.PostAsync("' + base + ep.path + '", content);', 'Console.WriteLine(await response.Content.ReadAsStringAsync());']).join('\n');
+      },
     };
 
     let apiLang = 'cURL';
     let apiSnips = [];
+    let apiKey = '';
+    try { apiKey = localStorage.getItem('dbc_api_key') || ''; } catch { apiKey = ''; }
 
     // Default base URL to wherever the page is served from.
     (function () {
       const el = document.getElementById('api-base');
       if (el && /^https?:/.test(location.origin)) el.value = location.origin;
     })();
+
+    function showKey() {
+      const box = document.getElementById('key-box');
+      const st = document.getElementById('key-status');
+      if (apiKey) {
+        document.getElementById('key-val').value = apiKey;
+        box.classList.remove('hidden');
+        st.innerHTML = 'This key is now included in the code samples below (as the <code>X-API-Key</code> header). Stored in your browser only.';
+      } else {
+        box.classList.add('hidden');
+        st.innerHTML = 'Optional — the API works without a key. Generate one for a higher rate limit, or if the server requires keys (DBC_REQUIRE_KEY).';
+      }
+    }
+    // Wire the API-key controls (elements exist from page load).
+    document.getElementById('gen-key').addEventListener('click', async (e) => {
+      const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Generating…';
+      try {
+        const res = await fetch('/api/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+        const data = await res.json();
+        if (data.ok) { apiKey = data.apiKey; try { localStorage.setItem('dbc_api_key', apiKey); } catch {} showKey(); if (!document.getElementById('api-pane').classList.contains('hidden')) renderApi(); }
+        else alert('Could not generate key: ' + (data.error || 'error'));
+      } catch (err) { alert('Request failed: ' + err.message); }
+      finally { btn.disabled = false; btn.textContent = 'Generate API key'; }
+    });
+    document.getElementById('key-copy').addEventListener('click', async (e) => {
+      try { await navigator.clipboard.writeText(apiKey); e.currentTarget.textContent = 'Copied!'; }
+      catch { e.currentTarget.textContent = 'Copy failed'; }
+      setTimeout(() => { e.currentTarget.textContent = 'Copy'; }, 1200);
+    });
+    document.getElementById('key-clear').addEventListener('click', () => {
+      apiKey = ''; try { localStorage.removeItem('dbc_api_key'); } catch {} showKey();
+      if (!document.getElementById('api-pane').classList.contains('hidden')) renderApi();
+    });
+    showKey();
 
     function renderApi() {
       const base = (document.getElementById('api-base').value || 'http://localhost:3000').replace(/\/+$/, '');
@@ -383,7 +476,7 @@ mail.contoso.org"></textarea>
       const gen = GEN[apiLang];
       let h = '';
       API_ENDPOINTS.forEach((ep, i) => {
-        const code = gen(ep, base);
+        const code = gen(ep, base, apiKey);
         apiSnips.push(code);
         const path = ep.path + (ep.q ? '?' + ep.q : '');
         h += '<div class="card ep">';

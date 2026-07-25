@@ -227,4 +227,53 @@ Ekhon **timeout prai 0** dekhabe. Ki kore korlam:
 
 ---
 
+## 10. Result 100% thik kina kivabe bujhba (verify)
+
+Ei tool kono kichu "guess" kore na — protita LISTED/CLEAN holo ekta **real DNS
+answer**:
+- **LISTED** = oi blacklist `127.0.0.x` return koreche (definitively listed).
+- **CLEAN** = NXDOMAIN return koreche (definitively listed na).
+- **TIMEOUT** = kono uttor pai nai (guess kori na).
+- **SKIPPED** = query-i korini (dead / key lage).
+
+Tumi nijei ei result **nijer terminal e verify korte paro** (`nslookup` diye —
+Windows/Mac/Linux sob tei ache):
+
+**1) IP listing verify (reverse the IP + `.` + zone):**
+`104.21.18.37` listed on `dnsbl-3.uceprotect.net` dekhale — IP ta ulta koro
+(`104.21.18.37` → `37.18.21.104`) ar zone judo:
+```
+nslookup 37.18.21.104.dnsbl-3.uceprotect.net
+```
+`127.0.0.x` ashle = LISTED (tool thik). "Non-existent domain" ashle = clean.
+
+**2) Domain listing verify (domain + `.` + zone):**
+```
+nslookup getitok.top.multi.surbl.org
+```
+`127.0.0.x` = listed.
+
+**3) SPF / DMARC verify:**
+```
+nslookup -type=txt example.com          (SPF — v=spf1 … dekhbe)
+nslookup -type=txt _dmarc.example.com   (DMARC — v=DMARC1; p=… dekhbe)
+```
+
+**4) Onno tool er sathe cross-check:**
+Same domain https://mxtoolbox.com/blacklists.aspx e dao — LISTED gulo mile jabe
+(je list dutai query kore)। Parthokko sudhu: mxtoolbox er kache Spamhaus/Barracuda
+er **paid/authorized access** ache, tai tara oi list gulo-o dekhay; amader default
+e segulo **SKIPPED** (nijer resolver + `DBC_TRUST_KEYED=true` dile amra-o dekhabo)।
+
+**5) Delist link:**
+Protita LISTED row e ekta **"Delist →"** link ache — seta oi list er **nijer
+official lookup page** e niye jay, jekhane source theke confirm korte parba.
+
+**6) Automated test:** `npm test` → **48 test pass** (logic verify kora)।
+
+> Short kotha: LISTED/CLEAN = DNS er confirmed answer, amar banano number na.
+> Upor er `nslookup` command diye nijei melate parba.
+
+---
+
 ## Kono ekta step atke gele oi terminal output ta paste koro — dekhe debo.
