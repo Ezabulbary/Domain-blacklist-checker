@@ -14,10 +14,11 @@ services:
       - key: HOST
         value: 0.0.0.0
       # --- Spamhaus DQS key ---
-      # Set DBC_RESOLVERS to your personal DQS resolver address.
-      # Format: <your-dqs-key>.zen.dq.spamhaus.net
-      # Get your free key at: https://www.spamhaus.com/free-checker/
-      - key: DBC_RESOLVERS
+      # Paste ONLY the key string from https://portal.spamhaus.com
+      # e.g.  abcd1234efgh5678   (NOT the full hostname)
+      # The app automatically rewrites Spamhaus zones to DQS format:
+      #   zen.spamhaus.org  ->  <key>.zen.dq.spamhaus.net
+      - key: DBC_DQS_KEY
         sync: false   # set manually in Render dashboard (keep key secret)
       # Enable key-required zones (Spamhaus ZEN, DBL, etc.) once DQS is set.
       - key: DBC_TRUST_KEYED

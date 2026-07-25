@@ -4,7 +4,7 @@ import { Resolver } from 'node:dns/promises';
 // at our own recursive resolver (Unbound) — public resolvers like 8.8.8.8 get
 // blocked by Spamhaus and poison every result (plan §5.1).
 //
-//   DBC_RESOLVERS=127.0.0.1,192.168.1.53  (comma-separated)
+//   DBC_RESOLVERS=127.0.0.1,192.168.1.53  (comma-separated IP addresses only)
 //
 // If unset we inherit the system resolvers, which is fine for local dev but NOT
 // for a deployed service that queries Spamhaus.
@@ -16,7 +16,12 @@ export function buildResolver(servers, opts = {}) {
       ? process.env.DBC_RESOLVERS.split(',').map((s) => s.trim()).filter(Boolean)
       : null);
   if (list && list.length) {
-    resolver.setServers(list);
+    // setServers() only accepts IP addresses (optionally with port), never
+    // hostnames. Silently skip any entry that looks like a hostname so a
+    // mis-configured DBC_RESOLVERS (e.g. a DQS hostname) doesn't crash the
+    // server on startup.
+    const ipOnly = list.filter((s) => /^[\d.:]+$/.test(s.replace(/^\[/, '').split(']')[0]));
+    if (ipOnly.length) resolver.setServers(ipOnly);
   } else {
     // No explicit servers: normally c-ares inherits the system DNS. On some
     // setups (notably Windows) it comes up with NO servers, so every query
@@ -32,6 +37,33 @@ export function buildResolver(servers, opts = {}) {
     }
   }
   return resolver;
+}
+
+// ---------------------------------------------------------------------------
+// Spamhaus DQS (Data Query Service) support
+// ---------------------------------------------------------------------------
+// Set DBC_DQS_KEY to your personal DQS key from https://portal.spamhaus.com
+// The key is used as a subdomain prefix for Spamhaus zones so queries go
+// through the authorised DQS resolver instead of the public mirrors:
+//
+//   zen.spamhaus.org   →  <key>.zen.dq.spamhaus.net
+//   dbl.spamhaus.org   →  <key>.dbl.dq.spamhaus.net
+//   (any *.spamhaus.org zone follows the same pattern)
+//
+// Public resolvers like 8.8.8.8 are blocked by Spamhaus — DQS removes that
+// restriction and gives accurate results from any cloud/shared host.
+const DQS_KEY = (process.env.DBC_DQS_KEY || '').trim();
+
+/**
+ * Rewrite a DNSBL zone name to its DQS equivalent when a key is configured.
+ * Non-Spamhaus zones are returned unchanged.
+ */
+export function dqsZone(zone) {
+  if (!DQS_KEY) return zone;
+  // Match *.spamhaus.org  (e.g. zen, dbl, sbl, xbl, pbl, zrd, authbl, …)
+  const m = zone.match(/^([^.]+)\.spamhaus\.org$/);
+  if (m) return `${DQS_KEY}.${m[1]}.dq.spamhaus.net`;
+  return zone;
 }
 
 /** DNS errors that genuinely mean "no such record" vs. a transient failure. */
@@ -85,7 +117,9 @@ export const reverseIp = (ip) => ip.split('.').reverse().join('.');
  * @returns { zone, listed: true|false|null, codes?, ttl?, responseMs, error? }
  */
 export async function queryZone(subject, zoneMeta, resolver, opts = {}) {
-  const fqdn = `${subject}.${zoneMeta.zone}`;
+  // Use the DQS-rewritten zone name when a key is configured so Spamhaus
+  // queries hit the authorised DQS resolver instead of the blocked public mirror.
+  const fqdn = `${subject}.${dqsZone(zoneMeta.zone)}`;
   const started = Date.now();
   // Whether we trust "listed" answers from key-required zones. Without a key /
   // authorized resolver these lists return a positive for *every* query, so we
