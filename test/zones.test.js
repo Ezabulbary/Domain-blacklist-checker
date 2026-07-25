@@ -36,6 +36,26 @@ test('every zone gets a valid category', () => {
   assert.ok(CATEGORIES.some((c) => c.key === 'domain'));
 });
 
+test('a DQS key never leaks into the public zone name', async () => {
+  // The key is a secret. It may only appear in queryHost (used to build the DNS
+  // name), never in `zone`, which the API and UI expose.
+  const KEY = 'testkeytestkeytestkey12345';
+  process.env.DBC_DQS_KEY = KEY;
+  const mod = await import('../src/lib/zones.js?dqs=1');
+  try {
+    const zen = mod.ALL_ZONES.find((z) => z.zone === 'zen.spamhaus.org');
+    assert.ok(zen, 'ZEN present');
+    assert.equal(zen.zone.includes(KEY), false, 'public zone name must not contain the key');
+    assert.ok(mod.queryHostOf(zen).includes(KEY), 'the key is used to build the query host');
+    assert.match(mod.queryHostOf(zen), /\.zen\.dq\.spamhaus\.net$/);
+    for (const z of mod.ALL_ZONES) {
+      assert.equal(z.zone.includes(KEY), false, `key leaked into ${z.name}`);
+    }
+  } finally {
+    delete process.env.DBC_DQS_KEY;
+  }
+});
+
 test('Spamhaus ZEN and DBL are present and critical', () => {
   const zen = ALL_ZONES.find((z) => z.zone === 'zen.spamhaus.org');
   const dbl = ALL_ZONES.find((z) => z.zone === 'dbl.spamhaus.org');

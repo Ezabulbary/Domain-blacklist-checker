@@ -85,7 +85,8 @@ export const reverseIp = (ip) => ip.split('.').reverse().join('.');
  * @returns { zone, listed: true|false|null, codes?, ttl?, responseMs, error? }
  */
 export async function queryZone(subject, zoneMeta, resolver, opts = {}) {
-  const fqdn = `${subject}.${zoneMeta.zone}`;
+  // queryHost may carry a secret (Spamhaus DQS key); zoneMeta.zone stays public.
+  const fqdn = `${subject}.${zoneMeta.queryHost || zoneMeta.zone}`;
   const started = Date.now();
   // Whether we trust "listed" answers from key-required zones. Without a key /
   // authorized resolver these lists return a positive for *every* query, so we

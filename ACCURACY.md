@@ -105,18 +105,36 @@ verified: 30 · answering: 10 · silent: 18 · blocked: 5 · always-positive: 3 
 
 ## 4. Aro beshi list trust korte chaile (coverage barano)
 
-Ekhon 40 ta trusted. Baki gulo (Spamhaus, Barracuda-full, Abusix, invaluement,
-SpamRats) unlock korte:
+Ekhon 40 ta trusted. Baki gulo unlock korar upay, **effect onujayi sajano**:
 
-1. **Nijer recursive resolver (Unbound)** chalao — public resolver er
-   block ese jabe na:
+### ⭐ 1. Spamhaus DQS key (free) — shobcheye boro labh, shobcheye sohoj
+Spamhaus-i shobcheye important list. Key thakle **jekono network theke** kaj kore
+— nijer resolver-o lage na (PaaS/Render/Railway e ei tai best)।
+
+1. Free key nao: https://www.spamhaus.com/free-trial/ (26-character key)
+2. Env e dao:
    ```
-   DBC_RESOLVERS=127.0.0.1
+   DBC_DQS_KEY=your26characterkeyfromspamhaus
    ```
-2. **Spamhaus free DQS key** nao (https://www.spamhaus.com/free-trial/) — tader
-   zone e nijer key boshao।
-3. **Abusix** — free trial API key.
-4. Tarpor abar: `npm run calibrate` — trusted count baré jabe.
+3. `npm run calibrate` → **Spamhaus ZEN + DBL `verified`** hoye jabe.
+
+App nije-i DQS zone banay (`<key>.zen.dq.spamhaus.net`)। **Key ta secret thake —
+API/UI te kokhono dekha jay na** (test kora ache)। Key bhul hole calibration
+`blocked — DQS key rejected` dekhabe, chup kore mittha result debe **na**।
+
+### 2. Nijer recursive resolver (Unbound) — VPS thakle
+Public resolver er block (URIBL, kichu list) ese jabe na:
+```
+DBC_RESOLVERS=127.0.0.1
+```
+
+### 3. Abusix free trial key / invaluement subscription
+Egulo paid/registration — na hoy `skipped` thakbe (kono khoti nai)।
+
+Tarpor abar: `npm run calibrate` — trusted count baré jabe.
+
+> **PaaS (Render/Railway/Fly) e deploy korle:** `DBC_DQS_KEY` + `DBC_TRUST_PROXY=true`
+> dao. Platform er resolver diye baki list gulo emniteo kaj kore.
 
 > Note: cloud VPS (AWS/GCP/Azure) er IP theke onek DNSBL block kore। Hetzner/
 > OVH/dedicated VPS beshi valo।

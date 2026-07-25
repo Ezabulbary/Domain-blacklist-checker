@@ -122,6 +122,45 @@ export const RETURN_CODES = {
 };
 
 // ---------------------------------------------------------------------------
+// Spamhaus DQS (Data Query Service).
+//
+// The public mirrors (zen/dbl.spamhaus.org) refuse queries that arrive via a
+// public resolver — they answer NXDOMAIN to everything, which looks "clean" but
+// means nothing. With a free DQS key the queries go to a per-customer zone
+// instead and work from anywhere:
+//
+//   IP:     2.0.0.127.<key>.zen.dq.spamhaus.net
+//   domain: example.com.<key>.dbl.dq.spamhaus.net
+//
+// Set DBC_DQS_KEY to enable. IMPORTANT: the key is a secret, so it only ever
+// lives in `queryHost` (used to build the DNS name). The public `zone` field —
+// which is returned by the API and shown in the UI — keeps the plain name.
+// ---------------------------------------------------------------------------
+const DQS_KEY = (process.env.DBC_DQS_KEY || '').trim();
+
+const DQS_ZONES = {
+  'zen.spamhaus.org': 'zen',
+  'dbl.spamhaus.org': 'dbl',
+};
+
+if (DQS_KEY) {
+  for (const z of [...IP_ZONES, ...DOMAIN_ZONES]) {
+    const name = DQS_ZONES[z.zone];
+    if (!name) continue;
+    z.queryHost = `${DQS_KEY}.${name}.dq.spamhaus.net`;
+    z.status = 'live';       // authorized now — calibration will confirm
+    z.requiresKey = false;
+    z.note = z.note.replace(/\s*—.*$/, '') + ' — via your Spamhaus DQS key.';
+  }
+}
+
+/** Real DNS zone to query (may carry a secret key); never expose this. */
+export const queryHostOf = (z) => z.queryHost || z.zone;
+
+/** True when a Spamhaus DQS key is configured. */
+export const dqsEnabled = () => Boolean(DQS_KEY);
+
+// ---------------------------------------------------------------------------
 // Calibration metadata — how to PROVE a zone gives trustworthy answers.
 //
 // Every DNSBL follows a contract: 127.0.0.2 is a permanent test entry (must be

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { buildResolver, reverseIp } from './resolve.js';
-import { ALL_ZONES, isListedAnswer, isBlockedAnswer } from './zones.js';
+import { ALL_ZONES, isListedAnswer, isBlockedAnswer, queryHostOf } from './zones.js';
 
 /**
  * DNSBL trust calibration.
@@ -41,8 +41,9 @@ let cache = null; // { at, resolvers, zones: { [zone]: {verdict, reason} } }
 
 /** Probe one zone: returns { verdict, reason, detail }. */
 export async function calibrateZone(z, resolver) {
+  const host = queryHostOf(z);
   const ask = async (subject) => {
-    const name = z.type === 'ip' ? `${reverseIp(subject)}.${z.zone}` : `${subject}.${z.zone}`;
+    const name = z.type === 'ip' ? `${reverseIp(subject)}.${host}` : `${subject}.${host}`;
     try {
       return { codes: await resolver.resolve4(name) };
     } catch (e) {
@@ -70,8 +71,12 @@ export async function calibrateZone(z, resolver) {
   if (!alive) {
     // Distinguish a dead zone from a transient resolver problem.
     try {
-      await resolver.resolveSoa(z.zone);
+      await resolver.resolveSoa(host);
     } catch {
+      // A DQS zone that won't resolve almost always means a bad/expired key.
+      if (z.queryHost) {
+        return { verdict: 'blocked', reason: `DQS key rejected or invalid (${control.error}) — check DBC_DQS_KEY` };
+      }
       return { verdict: 'dead', reason: `zone does not resolve (${control.error})` };
     }
     return { verdict: 'blocked', reason: `no usable answer (${control.error})` };
