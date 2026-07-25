@@ -10,40 +10,41 @@ one-page UI, and no login required. Each list is calibrated before its answer is
 trusted, so a timeout is never reported as clean and a list that cannot answer
 reliably is marked skipped instead of guessed.
 
-### Blacklist coverage & the results table
+### Blocklist coverage and the results table
 
-A check resolves the domain to its IP(s) and queries **every** zone in the
-catalog (`src/lib/zones.js`), IP-based lists against each A record, domain/URI
-lists against the domain. Then returns a row per blacklist:
+A check resolves the domain to its IPs, then queries every blocklist in the
+catalog (`src/lib/zones.js`): IP lists against the resolved IPs, domain and URI
+lists against the domain. The result is **one row per blocklist**:
 
 ```
-Checking getitok.top which resolves to 104.21.18.37 against 69 known blacklists
-Listed 2 times · 24 timeout/unknown · 97 clean
+mlhbd.fun resolves to 104.21.23.129, 172.67.211.72
+Checked against 40 of 69 blocklists. The other 29 cannot answer reliably.
+Listed 1 · 39 clean · 0 timeout · 29 skipped
 
-STATUS    BLACKLIST        REASON                     TTL   RESP
-LISTED    SURBL multi      getitok.top was listed     180   3ms
-LISTED    UCEPROTECTL3     104.21.18.37 was listed    2100  22ms
-OK        Spamhaus ZEN     …                          …
-TIMEOUT   ivmURI (key)     requires key (unverified)  …
+STATUS    BLOCKLIST      REASON                        TTL    RESP
+LISTED    SPFBL DNSBL    104.21.23.129 was listed      21600  141
+OK        SpamCop                                      
+SKIPPED   Spamhaus ZEN   ignores our queries
+SKIPPED   ivmSIP         answers "listed" for everything
 ```
 
-Every hostname in the catalog was **validated against live DNS** (SOA/NS + the
-`127.0.0.2` test-point), not copied from a list. Each zone is tagged:
+Because it is one row per list, the counts always add up:
+`listed + clean + timeout + skipped` equals the catalog size.
 
-- **live**. Responds normally.
-- **requiresKey**, Barracuda, Abusix, invaluement, Spamhaus (public resolver),
-  Sender Score. These return a positive for *every* query when you're not
-  authorized, so a "listed" answer is downgraded to **unknown** unless you opt
-  in with `DBC_TRUST_KEYED=true` (i.e. you've pointed `DBC_RESOLVERS` at an
-  authorized resolver / DQS). The `127.255.255.x` block sentinels are always
-  treated as unknown.
-- **defunct**, SORBS (shut 2024), MSRBL, DRMX, HIL/HIL2. Kept for parity; they
-  answer NXDOMAIN → shown OK.
-- **unverified**. Couldn't confirm from the test host; low weight so they can't
-  skew the score.
+**A list is only counted when it proves it answers this server honestly.**
+Before querying, each zone is probed with the pair the DNSBL contract defines: a
+test entry that must come back listed, and a control that must come back clean.
+That catches the two failure modes that quietly corrupt results elsewhere:
 
-Combined lists like Hostkarma use a `listedCodes` filter so their `127.0.0.1`
-**whitelist** answer is never miscounted as a listing.
+- a subscription-only list answering "listed" to every query, which would
+  invent listings;
+- a list we are not authorized for answering NXDOMAIN to everything, including
+  its own test entry, which would invent "clean".
+
+Both are excluded and shown as `SKIPPED` with the reason. Run `npm run calibrate`
+for the full report, or read [ACCURACY.md](./ACCURACY.md). To widen coverage, set
+a free Spamhaus DQS key (`DBC_DQS_KEY`) or point `DBC_RESOLVERS` at your own
+recursive resolver, then calibrate again.
 
 ## What it does
 
@@ -286,29 +287,45 @@ These are the traps that sink most first attempts:
 ```
 src/
   lib/
-    zones.js      DNSBL zone catalog: weights, severities, return-code maps, delist links
-    normalize.js  input → registrable domain (punycode, public-suffix)
-    resolve.js    DNS resolution + single-zone query (timeout-safe)
-    score.js      weighted 0–100 score + verdict + decorated listings
-    check.js      orchestrator (normalize → resolve → fan-out → score)
-    bulk.js       bounded-concurrency multi-domain check + CSV export
-    auth.js       SPF / DKIM / DMARC / MX / PTR health + auth score (live DNS)
-    recommend.js  rule-based, prioritized recommendations
-    analyze.js    unified report: blacklists + auth + risk score + recs + signals
-  db/
-    pool.js       pg pool (optional; null when DATABASE_URL unset) + txn helper
+    zones.js      blocklist catalog: weights, categories, test points, DQS support
+    normalize.js  raw input to registrable domain (punycode, public suffix)
+    resolve.js    DNS resolver, single-zone query with TTL and timing
+    calibrate.js  probes each list to decide whether its answers can be trusted
+    score.js      weighted 0-100 score and verdict
+    check.js      one domain end to end: normalize, resolve, query, collapse, score
+    bulk.js       many domains through a bounded pool, CSV export
+    auth.js       SPF / DKIM / DMARC / MX / PTR health and auth score
+    recommend.js  findings to prioritized, actionable recommendations
+    analyze.js    unified report: blocklists + auth + risk score + recommendations
+    apikeys.js    API key creation and validation
+    env.js        loads .env
+  db/             optional persistence, only used when DATABASE_URL is set
+    pool.js       pg pool (null when unset), TLS config, transaction helper
     migrate.js    migration runner (tracks schema_migrations)
-    migrations/   001_init.sql. The plan §6 schema
-    repositories/ users, domains, checks, monitors, alerts. Typed CRUD
+    migrations/   001_init.sql
+    repositories/ users, domains, checks, monitors, alerts
     index.js      barrel: import { db } from './db/index.js'
-  server.js       Fastify: /api/check, /api/check/bulk, /api/history, /api/zones
-  cli.js          single-domain command-line checker
-  bulk-cli.js     bulk checker (file / stdin / args, --csv output)
+  server.js       Fastify server: all API routes, static UI, cache, rate limit
+  cli.js          single domain checker
+  bulk-cli.js     bulk checker (file / stdin / args, --csv)
+  calibrate-cli.js  blocklist trust report
 public/
-  index.html      single-page UI: Single + Bulk tabs, sortable table, CSV download
-test/             node:test: normalize, score, bulk (+ db.test.js, DB-gated)
+  index.html      the whole UI: Analyze, Bulk list and API tabs
+test/             node:test suite (db.test.js is skipped without a database)
+Dockerfile        container build
 docker-compose.yml  local Postgres for development
 ```
+
+See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the layer diagram, the request
+flow, and exactly which files are needed at runtime versus development only.
+
+## Documentation
+
+| Document | What is in it |
+|---|---|
+| [GETTING-STARTED.md](./GETTING-STARTED.md) | Setup, running, database, sharing, troubleshooting |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | Layers, request flow, file responsibilities |
+| [ACCURACY.md](./ACCURACY.md) | Why results differ from other checkers, and the calibration that fixes it |
 
 ## Roadmap
 
