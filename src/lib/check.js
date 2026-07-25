@@ -2,6 +2,7 @@ import { normalizeDomain } from './normalize.js';
 import { buildResolver, resolveDomain, reverseIp, queryZone } from './resolve.js';
 import { IP_ZONES, DOMAIN_ZONES, RETURN_CODES } from './zones.js';
 import { scoreResults } from './score.js';
+import { getCalibration, isTrusted } from './calibrate.js';
 
 /**
  * End-to-end check for one domain (mxtoolbox-style):
@@ -48,19 +49,31 @@ export async function checkDomain(input, opts = {}) {
   // and "the same". Surface it so the UI can tell the user to set DBC_RESOLVERS.
   const dnsError = !norm.isIp && dns.a.length === 0 && Object.keys(dns.errors).length > 0;
 
-  // Decide which zones to actually query. Querying a defunct list (SORBS,
-  // MSRBL, …) or a key-only list without a key just produces a wall of
-  // meaningless TIMEOUTs — so we DON'T query those; they're shown as "skipped"
-  // (inactive / needs key), which never counts as a timeout. Enable the
-  // key-only lists with DBC_TRUST_KEYED=true once you have an authorized
-  // resolver / DQS key.
+  // Decide which zones to actually query, from live calibration (see
+  // calibrate.js). Only lists that provably answer US honestly are queried:
+  // a subscription-only list that answers "listed" to everything would create
+  // FALSE LISTINGS, and a list that silently ignores us would create FALSE
+  // "CLEAN" results. Both are excluded and reported as "skipped" with the
+  // reason, so the numbers you see are only from lists that actually work.
+  const cal = opts.calibration === false ? null : opts.calibration || (await getCalibration({ resolver }).catch(() => null));
+
   const trustKeyed = process.env.DBC_TRUST_KEYED === 'true';
-  const shouldQuery = (z) =>
-    z.status !== 'defunct' && !(z.status === 'requiresKey' && !trustKeyed);
-  const skipRow = (z, subject) => ({
-    ...z, subject, skipped: true,
-    error: z.status === 'defunct' ? 'INACTIVE' : 'NEEDS_KEY',
-  });
+  const shouldQuery = (z) => {
+    const v = cal && cal.zones && cal.zones[z.zone];
+    if (v) return isTrusted(v.verdict);
+    // No calibration available — fall back to the static catalog status.
+    return z.status !== 'defunct' && !(z.status === 'requiresKey' && !trustKeyed);
+  };
+  const skipRow = (z, subject) => {
+    const v = cal && cal.zones && cal.zones[z.zone];
+    return {
+      ...z,
+      subject,
+      skipped: true,
+      error: v ? v.verdict.toUpperCase().replace(/-/g, '_') : (z.status === 'defunct' ? 'INACTIVE' : 'NEEDS_KEY'),
+      skipReason: v ? v.reason : (z.status === 'defunct' ? 'list inactive' : 'needs key (set DBC_TRUST_KEYED)'),
+    };
+  };
 
   // Build the job list, keeping each job's identity (meta + subject) so a job
   // that misses the overall cap can still be reported as its own zone row.
@@ -97,6 +110,8 @@ export async function checkDomain(input, opts = {}) {
   const timeoutCount = table.filter((r) => r.state === 'timeout').length;
   const okCount = table.filter((r) => r.state === 'ok').length;
   const skippedCount = table.filter((r) => r.state === 'skipped').length;
+  // How many distinct blocklists actually answered us — the meaningful number.
+  const trustedZones = new Set(table.filter((r) => r.state !== 'skipped').map((r) => r.zone)).size;
 
   // Sort: listed → timeout → ok → skipped; alphabetical within each group.
   const order = { listed: 0, timeout: 1, ok: 2, skipped: 3 };
@@ -114,6 +129,7 @@ export async function checkDomain(input, opts = {}) {
     dnsError,
     dns: { a: dns.a, aaaa: dns.aaaa, mx: dns.mx, errors: dns.errors },
     zonesChecked,
+    trustedZones,
     listedCount,
     timeoutCount,
     okCount,
@@ -135,7 +151,7 @@ function toRow(r) {
   let reason = '';
   if (state === 'listed') reason = `${r.subject} was listed`;
   else if (state === 'timeout') reason = timeoutReason(r);
-  else if (state === 'skipped') reason = r.error === 'INACTIVE' ? 'list inactive' : 'needs key (set DBC_TRUST_KEYED)';
+  else if (state === 'skipped') reason = r.skipReason || 'not queried';
   return {
     name: r.name || r.zone,
     zone: r.zone,

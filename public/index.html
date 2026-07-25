@@ -572,7 +572,8 @@ mail.contoso.org"></textarea>
       h += '<div class="gauge-wrap">' + gauge(d.riskScore) + '<div class="standing" style="color:' + riskColor(d.riskScore) + '">'
         + esc((d.standing || '').toUpperCase()) + '</div></div>';
       h += '<div style="flex:1"><div class="meta">Analyzing <b>' + esc(d.domain) + '</b> which resolves to <b>'
-        + esc((d.resolvesTo || []).join(', ') || '—') + '</b> against <b>' + bl.zonesChecked + '</b> known blacklists</div>';
+        + esc((d.resolvesTo || []).join(', ') || '—') + '</b> against <b>' + (bl.trustedZones ?? bl.zonesChecked)
+        + '</b> verified blacklists <span class="mini">(of ' + bl.zonesChecked + ' known — the rest can\'t answer us reliably)</span></div>';
       h += '<div class="meta">Listed <b class="txt-bad">' + bl.listedCount + '</b> · ' + bl.okCount + ' clean · '
         + '<b class="txt-warn">' + bl.timeoutCount + '</b> timeout'
         + (bl.skippedCount ? ' · ' + bl.skippedCount + ' skipped' : '')

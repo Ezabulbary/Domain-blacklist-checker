@@ -11,6 +11,7 @@ import { checkMany, resultsToCsv } from './lib/bulk.js';
 import { analyzeDomain } from './lib/analyze.js';
 import { checkAuth } from './lib/auth.js';
 import { createApiKey, validateApiKey } from './lib/apikeys.js';
+import { getCalibration, isTrusted, summarize } from './lib/calibrate.js';
 import { buildResolver } from './lib/resolve.js';
 import { ALL_ZONES, CATEGORIES } from './lib/zones.js';
 import { dbEnabled } from './db/pool.js';
@@ -171,6 +172,25 @@ export function buildServer() {
       name, zone, type, category, weight, severity, status, note,
     })),
   }));
+
+  // Which blocklists can be trusted from THIS server, and why not (see
+  // calibrate.js). ?refresh=1 re-runs the probes.
+  app.get('/api/calibration', async (req) => {
+    const cal = await getCalibration({ resolver, force: req.query.refresh === '1' });
+    const byZone = new Map(ALL_ZONES.map((z) => [z.zone, z]));
+    const zones = Object.entries(cal.zones).map(([zone, v]) => ({
+      zone, name: byZone.get(zone)?.name || zone, trusted: isTrusted(v.verdict), ...v,
+    }));
+    return {
+      ok: true,
+      checkedAt: new Date(cal.at).toISOString(),
+      resolvers: cal.resolvers,
+      total: zones.length,
+      trusted: zones.filter((z) => z.trusted).length,
+      summary: summarize(cal),
+      zones,
+    };
+  });
 
   // Generate a new API key. Optional { email } ties it to a user record.
   app.post('/api/keys', async (req, reply) => {

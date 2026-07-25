@@ -9,6 +9,7 @@
     "dev": "node --watch src/server.js",
     "check": "node src/cli.js",
     "check:bulk": "node src/bulk-cli.js",
+    "calibrate": "node src/calibrate-cli.js",
     "db:migrate": "node src/db/migrate.js",
     "test": "node --test"
   },

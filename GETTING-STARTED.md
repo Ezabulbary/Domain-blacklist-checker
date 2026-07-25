@@ -152,6 +152,7 @@ Local e (nijer laptop e) test korle onek list timeout dekhabe — eta normal, co
 | `npm run check:bulk <file>` | CLI bulk (file/stdin) |
 | `npm run check:bulk -- --csv <file>` | Bulk → CSV output |
 | `npm run db:migrate` | DB table banao (DATABASE_URL lage) |
+| `npm run calibrate` | Kon blacklist trust kora jay — live test kore report dey |
 | `npm test` | Sob test chalao |
 
 ## 7. Shob setting (environment variable — optional)
@@ -175,6 +176,7 @@ Puro list `.env.example` file e ache.
 | Error / Samasya | Karon + Fix |
 |---|---|
 | `Cannot find package 'pg'` | `npm install` chalao nai. Chalao. |
+| **Onno site (mxtoolbox) er sathe result mile na** | App ekhon **nije test kore** kon list bishwasjoggo (`npm run calibrate`)। Je list amader mittha uttor dey (jemon invaluement — shobaike "listed" bole) ba chup kore ignore kore (Spamhaus, public resolver theke), segulo **SKIPPED** dekhabe — score e dhora hoy na. Puro bishleshon: **`ACCURACY.md`**. |
 | **Shob domain "same"/faka result, "resolves to —", A/MX faka, 0 clean** | Tomar machine e **DNS kaj korche na** — kono domain resolve hocche na. Fix: `set DBC_RESOLVERS=1.1.1.1` diye `npm start` (PowerShell: `$env:DBC_RESOLVERS="1.1.1.1"`). Tao na hole network/firewall DNS (port 53) block korche — onno network e cheshta koro. UI ekhon ekta warning banner-o dekhabe. |
 | `npm start` e port busy (`EADDRINUSE`) | Onno kichu 3000 port e cholche. `set PORT=3001` diye chalao. |
 | Onek list "TIMEOUT" dekhachche | Normal — public resolver + key nai. §5 dekho. |

@@ -53,6 +53,7 @@ export async function analyzeDomain(input, opts = {}) {
       score: bl.score,
       verdict: bl.verdict,
       zonesChecked: bl.zonesChecked,
+      trustedZones: bl.trustedZones,
       listedCount: bl.listedCount,
       timeoutCount: bl.timeoutCount,
       okCount: bl.okCount,

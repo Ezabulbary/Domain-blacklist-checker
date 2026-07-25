@@ -22,25 +22,47 @@ test('sets dnsError when the resolver cannot reach a DNS server', async () => {
   assert.equal(r.dnsError, true);
 });
 
-test('defunct / key-only lists are skipped (not counted as timeouts)', async () => {
+// One A record; every DNSBL zone query answers a clean NXDOMAIN.
+// resolve4 returns strings normally, {address,ttl} objects when ttl:true.
+const cleanResolver = {
+  resolve4: (name, opts) => name === 'example.com'
+    ? Promise.resolve(opts && opts.ttl ? [{ address: '1.2.3.4', ttl: 60 }] : ['1.2.3.4'])
+    : Promise.reject(err('ENOTFOUND')),
+  resolve6: () => Promise.reject(err('ENOTFOUND')),
+  resolveMx: () => Promise.reject(err('ENOTFOUND')),
+  resolveTxt: () => Promise.reject(err('ENOTFOUND')),
+  reverse: () => Promise.reject(err('ENOTFOUND')),
+};
+
+test('without calibration, defunct / key-only lists are skipped (not timeouts)', async () => {
   delete process.env.DBC_TRUST_KEYED;
-  const err = (c) => { const e = new Error(c); e.code = c; return e; };
-  const clean = {
-    // The domain has one A record; every DNSBL zone query answers clean NXDOMAIN.
-    // resolve4 returns strings normally, {address,ttl} objects when ttl:true.
-    resolve4: (name, opts) => name === 'example.com'
-      ? Promise.resolve(opts && opts.ttl ? [{ address: '1.2.3.4', ttl: 60 }] : ['1.2.3.4'])
-      : Promise.reject(err('ENOTFOUND')),
-    resolve6: () => Promise.reject(err('ENOTFOUND')),
-    resolveMx: () => Promise.reject(err('ENOTFOUND')),
-    resolveTxt: () => Promise.reject(err('ENOTFOUND')),
-    reverse: () => Promise.reject(err('ENOTFOUND')),
-  };
-  const r = await checkDomain('example.com', { resolver: clean, retries: 0, overallTimeoutMs: 4000 });
+  const r = await checkDomain('example.com', {
+    resolver: cleanResolver, calibration: false, retries: 0, overallTimeoutMs: 4000,
+  });
   const expectedSkipped = ALL_ZONES.filter((z) => z.status === 'defunct' || z.status === 'requiresKey').length;
   assert.equal(r.timeoutCount, 0, 'no timeouts when every queried list answers');
   assert.equal(r.skippedCount, expectedSkipped, 'defunct + key-only zones are skipped');
   assert.ok(r.skippedCount > 0);
+});
+
+test('calibration decides what is queried: untrusted lists are skipped, not scored', async () => {
+  // Pretend only one zone is trustworthy; everything else must be skipped.
+  const trustedZone = ALL_ZONES[0].zone;
+  const zones = {};
+  for (const z of ALL_ZONES) {
+    zones[z.zone] = z.zone === trustedZone
+      ? { verdict: 'verified', reason: 'test entry listed, control clean' }
+      : { verdict: 'always-positive', reason: 'answers listed for everything' };
+  }
+  const r = await checkDomain('example.com', {
+    resolver: cleanResolver, calibration: { at: Date.now(), zones }, retries: 0, overallTimeoutMs: 4000,
+  });
+  assert.equal(r.trustedZones, 1, 'only the calibrated-trusted zone is queried');
+  assert.equal(r.skippedCount, ALL_ZONES.length - 1, 'every untrusted zone is skipped');
+  assert.equal(r.listedCount, 0, 'untrusted zones can never contribute a listing');
+  // The skip reason comes from calibration, so the UI can explain why.
+  const skipped = r.table.find((x) => x.state === 'skipped');
+  assert.match(skipped.reason, /answers listed/);
 });
 
 test('does not set dnsError for a genuinely record-less (NXDOMAIN) domain', async () => {

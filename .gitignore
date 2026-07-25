@@ -6,3 +6,6 @@ npm-debug.log*
 .DS_Store
 coverage/
 dist/
+
+# machine-specific calibration cache
+.calibration.json

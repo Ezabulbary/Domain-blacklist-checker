@@ -121,6 +121,68 @@ export const RETURN_CODES = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Calibration metadata — how to PROVE a zone gives trustworthy answers.
+//
+// Every DNSBL follows a contract: 127.0.0.2 is a permanent test entry (must be
+// listed) and 127.0.0.1 must never be listed. Querying both tells us whether a
+// zone actually discriminates from *this* server, or is lying / silently
+// ignoring us. Domain zones use published test domains where they exist.
+//
+//   testPoint — subject that MUST come back listed
+//   control   — subject that MUST come back clean
+// ---------------------------------------------------------------------------
+export const DEFAULT_IP_TEST = '127.0.0.2';
+export const DEFAULT_IP_CONTROL = '127.0.0.1';
+// A domain no blocklist could plausibly carry.
+export const DEFAULT_DOMAIN_CONTROL = 'clean-control-zz9x8w7v.com';
+
+const TEST_POINTS = {
+  // Published domain test entries.
+  'dbl.spamhaus.org': 'dbltest.com',
+  'multi.surbl.org': 'test.surbl.org',
+  'multi.uribl.com': 'test.uribl.com',
+  // 127.0.0.1 is itself a bogon, so bogons needs a routable control instead.
+  'bogons.cymru.com': { control: '8.8.8.8' },
+};
+
+// Codes that mean "your query was refused / you are not authorized" — never a
+// real listing. 127.255.255.x is the common convention; URIBL uses 127.0.0.1.
+export const GLOBAL_BLOCKED_PREFIX = '127.255.255.';
+const BLOCKED_CODES = {
+  'multi.uribl.com': ['127.0.0.1'],
+  'black.uribl.com': ['127.0.0.1'],
+};
+
+for (const z of [...IP_ZONES, ...DOMAIN_ZONES]) {
+  const t = TEST_POINTS[z.zone];
+  if (typeof t === 'string') z.testPoint = t;
+  else if (t && t.control) z.control = t.control;
+  if (!z.testPoint && z.type === 'ip') z.testPoint = DEFAULT_IP_TEST;
+  if (!z.control) z.control = z.type === 'ip' ? DEFAULT_IP_CONTROL : DEFAULT_DOMAIN_CONTROL;
+  if (BLOCKED_CODES[z.zone]) z.blockedCodes = BLOCKED_CODES[z.zone];
+}
+
+/**
+ * Does this set of answer codes represent a real listing for this zone?
+ * Handles refusal sentinels and zones whose codes include non-listing meanings
+ * (e.g. Hostkarma's 127.0.0.1 whitelist).
+ */
+export function isListedAnswer(zone, codes) {
+  if (!codes || codes.length === 0) return false;
+  if (codes.some((c) => c.startsWith(GLOBAL_BLOCKED_PREFIX))) return false;
+  if (zone.blockedCodes && codes.some((c) => zone.blockedCodes.includes(c))) return false;
+  if (zone.listedCodes) return codes.some((c) => zone.listedCodes.includes(c));
+  return true;
+}
+
+/** True when the codes mean "refused / not authorized" rather than clean. */
+export function isBlockedAnswer(zone, codes) {
+  if (!codes || codes.length === 0) return false;
+  if (codes.some((c) => c.startsWith(GLOBAL_BLOCKED_PREFIX))) return true;
+  return Boolean(zone.blockedCodes && codes.some((c) => zone.blockedCodes.includes(c)));
+}
+
 // Assign a UI category to each zone so the Blacklists grid can filter by
 // All / Email / Domain-URI / IP / Spam-Phishing / Malware. Derived from the
 // zone's purpose (keywords) falling back to its query type.
