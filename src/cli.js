@@ -23,10 +23,10 @@ if (!r.ok) {
 
 const badge = { clean: '✓ CLEAN', listed: '! LISTED', blacklisted: '✗ BLACKLISTED', unknown: '? UNKNOWN' }[r.verdict];
 console.log(
-  `\n${badge}  —  ${r.domain}  resolves to ${r.resolvesTo.join(', ') || '—'}`,
+  `\n${badge}, ${r.domain}  resolves to ${r.resolvesTo.join(', ') || 'no IP'}`,
 );
 console.log(
-  `Checked against ${r.zonesChecked} blacklists — listed ${r.listedCount}, ${r.timeoutCount} timeout/unknown  ·  score ${r.score}/100  (${r.tookMs}ms)\n`,
+  `Checked against ${r.zonesChecked} blacklists. Listed ${r.listedCount}, ${r.timeoutCount} timeout/unknown  ·  score ${r.score}/100  (${r.tookMs}ms)\n`,
 );
 
 const icon = { listed: '✗', ok: '✓', timeout: '?' };

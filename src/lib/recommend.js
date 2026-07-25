@@ -1,4 +1,4 @@
-// Turn a report's findings into concrete, prioritized recommendations — the
+// Turn a report's findings into concrete, prioritized recommendations. The
 // "what do I actually do about this" layer (like the reference tool's
 // Recommendations tab). Pure function over { auth, table }: no I/O.
 //

@@ -5,7 +5,7 @@ import { ALL_ZONES } from '../src/lib/zones.js';
 
 const err = (c) => { const e = new Error(c); e.code = c; return e; };
 
-// A resolver whose every lookup fails with a connection error — simulates a
+// A resolver whose every lookup fails with a connection error. Simulates a
 // machine whose DNS is unreachable (port 53 blocked / no system resolver).
 const brokenResolver = {
   resolve4: () => Promise.reject(err('ESERVFAIL')),
@@ -16,7 +16,7 @@ const brokenResolver = {
 };
 
 test('sets dnsError when the resolver cannot reach a DNS server', async () => {
-  const r = await checkDomain('github.com', { resolver: brokenResolver, overallTimeoutMs: 2000 });
+  const r = await checkDomain('github.com', { resolver: brokenResolver, calibration: false, overallTimeoutMs: 2000 });
   assert.equal(r.ok, true);
   assert.equal(r.resolvesTo.length, 0);
   assert.equal(r.dnsError, true);
@@ -73,6 +73,6 @@ test('does not set dnsError for a genuinely record-less (NXDOMAIN) domain', asyn
     resolveTxt: () => Promise.reject(err('ENOTFOUND')),
     reverse: () => Promise.reject(err('ENOTFOUND')),
   };
-  const r = await checkDomain('example.com', { resolver: nx, overallTimeoutMs: 2000 });
+  const r = await checkDomain('example.com', { resolver: nx, calibration: false, overallTimeoutMs: 2000 });
   assert.equal(r.dnsError, false, 'clean NXDOMAIN is not a resolver failure');
 });

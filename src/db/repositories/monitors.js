@@ -8,7 +8,7 @@ const INTERVAL = { hourly: '1 hour', daily: '1 day', weekly: '7 days' };
 
 /**
  * Create (or return the existing) monitor for a user + domain name. The domain
- * is resolved/created first. One monitor per (user, domain) — a second call
+ * is resolved/created first. One monitor per (user, domain). A second call
  * updates frequency/notify_email/active instead of erroring.
  */
 export async function createMonitor({ userId, domainName, frequency = 'daily', notifyEmail = null } = {}) {

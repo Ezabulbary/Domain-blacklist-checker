@@ -6,7 +6,7 @@ const COLS = 'id, domain_id, user_id, score, verdict, listed_count, raw_result, 
 /**
  * Persist one check result. `result` is the object returned by checkDomain():
  * we resolve/create the domain row, insert the check, and stamp the domain's
- * last_checked_at — all in a single transaction.
+ * last_checked_at. All in a single transaction.
  *
  * @param {object} result  checkDomain() output (must be ok:true)
  * @param {object} [opts]  { userId }
@@ -80,7 +80,7 @@ export async function latestCheckForDomain(domainId) {
   return rows[0] ?? null;
 }
 
-/** Count today's checks for a user — enforces the free-tier daily quota. */
+/** Count today's checks for a user. Enforces the free-tier daily quota. */
 export async function countChecksToday(userId) {
   const { rows } = await query(
     `SELECT count(*)::int AS n FROM checks

@@ -213,7 +213,7 @@
 <body>
   <div class="wrap">
     <h1>Domain Blacklist Checker</h1>
-    <p class="sub">Check whether domains and their mail IPs are on spam/malware DNSBLs — weighted score + delist links.</p>
+    <p class="sub">Check a domain and its mail IPs against DNS blocklists. Weighted score, authentication health, and removal links.</p>
 
     <div class="tabs">
       <div class="tab active" data-tab="single">Analyze</div>
@@ -224,17 +224,17 @@
     <!-- ANALYZE -->
     <section id="single-pane">
       <form id="single-form">
-        <input type="text" id="q" placeholder="analyze a domain or IP — e.g. example.com" autocomplete="off" autofocus />
+        <input type="text" id="q" placeholder="Enter a domain or IP, for example example.com" autocomplete="off" autofocus />
         <button id="go" type="submit">▶ Analyze</button>
       </form>
-      <p class="hint2">Blacklists across 90+ DNSBL/URIBL zones · SPF / DKIM / DMARC health · risk score · recommendations</p>
+      <p class="hint2" id="lists-hint">Blocklists, SPF / DKIM / DMARC health, risk score, recommendations</p>
       <div id="single-out"></div>
     </section>
 
     <!-- BULK -->
     <section id="bulk-pane" class="hidden">
       <form id="bulk-form">
-        <textarea id="bulk-input" placeholder="One domain per line — or paste a CSV. e.g.
+        <textarea id="bulk-input" placeholder="One domain per line, or paste a CSV. For example:
 example.com
 google.com
 mail.contoso.org"></textarea>
@@ -254,7 +254,7 @@ mail.contoso.org"></textarea>
       <div class="api-head">
         <div>
           <h3 style="margin:0 0 4px">API Reference</h3>
-          <p class="hint2" style="margin:0">Every check is a simple HTTP request. An API key is optional — pick your language, copy, done.</p>
+          <p class="hint2" style="margin:0">Every check is a simple HTTP request. An API key is optional. Pick your language, copy, done.</p>
         </div>
         <label class="api-base">Base URL
           <input type="text" id="api-base" value="http://localhost:3000" spellcheck="false" />
@@ -264,7 +264,7 @@ mail.contoso.org"></textarea>
         <div class="key-row">
           <div style="flex:1">
             <div class="auth-l">Your API key</div>
-            <div class="mini" id="key-status">Optional — the API works without a key. Generate one for a higher rate limit, or if the server requires keys (DBC_REQUIRE_KEY).</div>
+            <div class="mini" id="key-status">Optional. The API works without a key. Generate one for a higher rate limit, or if the server requires keys (DBC_REQUIRE_KEY).</div>
           </div>
           <button id="gen-key" type="button">Generate API key</button>
         </div>
@@ -289,12 +289,23 @@ mail.contoso.org"></textarea>
     </section>
 
     <footer>
-      Timeouts are reported as <b>unknown</b>, never as clean. Weighted score: Spamhaus &gt; Barracuda &gt; SORBS.
+      A blocklist is only counted when it answers this server reliably. Timeouts are never
+      reported as clean, and lists that cannot be verified are marked skipped.
     </footer>
   </div>
 
   <script>
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // Real catalog size, read from the server so no count is ever hardcoded.
+    let zoneCount = 0;
+    fetch('/api/zones').then((r) => r.json()).then((d) => {
+      zoneCount = d.count || 0;
+      const el = document.getElementById('lists-hint');
+      if (el && zoneCount) {
+        el.textContent = zoneCount + ' blocklists, SPF / DKIM / DMARC health, risk score, recommendations';
+      }
+    }).catch(() => {});
     const scoreColor = (s) => (s >= 85 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)');
 
     // ---- tabs ----
@@ -320,7 +331,7 @@ mail.contoso.org"></textarea>
         resp: '{\n  "ok": true,\n  "domain": "example.com",\n  "riskScore": 82,\n  "standing": "good standing",\n  "auth": { "score": 59, "spf": {…}, "dkim": {…}, "dmarc": {…} },\n  "blacklist": { "listedCount": 2, "zonesChecked": 69, "table": [ … ] },\n  "recommendations": [ { "severity": "high", "title": "No SPF record", … } ]\n}' },
       { method: 'GET', path: '/api/check', q: 'domain=example.com',
         title: 'Blacklist check',
-        desc: 'Full per-blacklist results table — each row is listed / ok / timeout, with TTL and response time.',
+        desc: 'One row per blocklist: listed, clean or timeout, with TTL and response time.',
         resp: '{\n  "ok": true,\n  "domain": "example.com",\n  "score": 95,\n  "verdict": "listed",\n  "listedCount": 1,\n  "table": [ { "name": "Spamhaus ZEN", "state": "ok", "ttl": null, "responseMs": 34 }, … ]\n}' },
       { method: 'POST', path: '/api/check/bulk', body: { domains: ['example.com', 'test.org'] },
         title: 'Bulk check',
@@ -443,7 +454,7 @@ mail.contoso.org"></textarea>
         st.innerHTML = 'This key is now included in the code samples below (as the <code>X-API-Key</code> header). Stored in your browser only.';
       } else {
         box.classList.add('hidden');
-        st.innerHTML = 'Optional — the API works without a key. Generate one for a higher rate limit, or if the server requires keys (DBC_REQUIRE_KEY).';
+        st.innerHTML = 'Optional. The API works without a key. Generate one for a higher rate limit, or if the server requires keys (DBC_REQUIRE_KEY).';
       }
     }
     // Wire the API-key controls (elements exist from page load).
@@ -511,8 +522,8 @@ mail.contoso.org"></textarea>
       const domain = q.value.trim();
       if (!domain) return;
       go.disabled = true;
-      sOut.innerHTML = '<div class="card"><span class="spinner"></span> Analyzing ' + esc(domain)
-        + ' — resolving, auth health, and 90+ blacklists…</div>';
+      sOut.innerHTML = '<div class="card"><span class="spinner"></span> Checking ' + esc(domain)
+        + ': DNS records, authentication, and ' + (zoneCount ? zoneCount + ' blocklists' : 'blocklists') + '.</div>';
       try {
         const res = await fetch('/api/analyze?domain=' + encodeURIComponent(domain));
         renderAnalyze(await res.json());
@@ -561,26 +572,28 @@ mail.contoso.org"></textarea>
       // --- DNS-failure banner: the resolver couldn't reach a DNS server, so
       // nothing resolves and every domain looks empty/identical. ---
       if (d.dnsError) {
-        h += '<div class="card banner">⚠️ <b>DNS resolution failed</b> — the app could not reach a DNS server, '
-          + 'so no domain resolves (that is why every domain looks the same). '
-          + 'Fix: set a DNS resolver and restart, e.g. <code>set DBC_RESOLVERS=1.1.1.1</code> then <code>npm start</code>. '
-          + 'If it still fails, your network/firewall is blocking DNS (port 53) — try another network.</div>';
+        h += '<div class="card banner"><b>DNS lookups failed.</b> No DNS server could be reached, so nothing resolves '
+          + 'and every domain returns an empty result. Set a resolver and restart: '
+          + '<code>set DBC_RESOLVERS=1.1.1.1</code> then <code>npm start</code>. '
+          + 'If it still fails, your network is blocking DNS on port 53.</div>';
       }
 
       // --- summary card: gauge + standing ---
       h += '<div class="card"><div class="top">';
       h += '<div class="gauge-wrap">' + gauge(d.riskScore) + '<div class="standing" style="color:' + riskColor(d.riskScore) + '">'
         + esc((d.standing || '').toUpperCase()) + '</div></div>';
-      h += '<div style="flex:1"><div class="meta">Analyzing <b>' + esc(d.domain) + '</b> which resolves to <b>'
-        + esc((d.resolvesTo || []).join(', ') || '—') + '</b> against <b>' + (bl.trustedZones ?? bl.zonesChecked)
-        + '</b> verified blacklists <span class="mini">(of ' + bl.zonesChecked + ' known — the rest can\'t answer us reliably)</span></div>';
+      h += '<div style="flex:1"><div class="meta"><b>' + esc(d.domain) + '</b> resolves to <b>'
+        + esc((d.resolvesTo || []).join(', ') || 'no IP address') + '</b></div>';
+      h += '<div class="meta">Checked against <b>' + (bl.trustedZones ?? bl.zonesChecked) + '</b> of '
+        + bl.zonesChecked + ' blocklists. '
+        + '<span class="mini">The other ' + (bl.skippedCount || 0) + ' cannot give a reliable answer from this server.</span></div>';
       h += '<div class="meta">Listed <b class="txt-bad">' + bl.listedCount + '</b> · ' + bl.okCount + ' clean · '
         + '<b class="txt-warn">' + bl.timeoutCount + '</b> timeout'
         + (bl.skippedCount ? ' · ' + bl.skippedCount + ' skipped' : '')
         + (d.auth ? ' · auth score <b>' + d.auth.score + '/100</b>' : '') + ' · ' + d.tookMs + 'ms</div>';
-      h += '<div class="dns"><div><b>A</b> ' + (esc(d.dns.a.join(', ')) || '—') + '</div>'
+      h += '<div class="dns"><div><b>A</b> ' + (esc(d.dns.a.join(', ')) || 'None') + '</div>'
         + (d.dns.aaaa.length ? '<div><b>AAAA</b> ' + esc(d.dns.aaaa.join(', ')) + '</div>' : '')
-        + '<div><b>MX</b> ' + (esc(d.dns.mx.join(', ')) || '—') + '</div></div>';
+        + '<div><b>MX</b> ' + (esc(d.dns.mx.join(', ')) || 'None') + '</div></div>';
       h += '</div></div>';
 
       // --- auth cards ---
@@ -598,8 +611,8 @@ mail.contoso.org"></textarea>
       }
 
       // --- blacklist section ---
-      h += '<div class="tbl-head"><h3 style="margin:0">Blacklists <span class="mini">' + bl.zonesChecked + ' lists · '
-        + bl.listedCount + ' listed</span></h3></div>';
+      h += '<div class="tbl-head"><h3 style="margin:0">Blocklists <span class="mini">'
+        + bl.zonesChecked + ' total, ' + bl.listedCount + ' listed</span></h3></div>';
       // status filter (view one state at a time) + category filter
       h += '<div class="cat-tabs" id="status-tabs">' + STATUS_FILTERS.map((s) => {
         const n = s.key === 'all' ? '' : ' ' + (s.key === 'listed' ? bl.listedCount : s.key === 'timeout' ? bl.timeoutCount : s.key === 'ok' ? bl.okCount : bl.skippedCount);
@@ -795,13 +808,13 @@ mail.contoso.org"></textarea>
       for (const r of sortedResults()) {
         if (!r.ok) {
           h += '<tr><td>' + esc(r.input) + '</td><td><span class="badge b-invalid">invalid</span></td>'
-            + '<td class="score-cell">—</td><td class="mini">' + esc(r.error) + '</td></tr>';
+            + '<td class="score-cell">n/a</td><td class="mini">' + esc(r.error) + '</td></tr>';
           continue;
         }
         const rowCls = r.verdict === 'clean' ? 'ok-row' : (r.verdict === 'blacklisted' ? 'bad-row' : (r.verdict === 'listed' ? 'warn-row' : ''));
         const listings = r.listings.length
           ? r.listings.map((l) => esc(l.zone)).join(', ')
-          : '<span class="mini">—</span>';
+          : '<span class="mini">None</span>';
         h += '<tr class="' + rowCls + '"><td>' + esc(r.domain)
           + (r.dns.a.length ? ' <span class="mini">' + esc(r.dns.a[0]) + (r.dns.a.length > 1 ? ' +' + (r.dns.a.length - 1) : '') + '</span>' : '')
           + '</td>'

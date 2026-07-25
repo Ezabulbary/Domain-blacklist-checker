@@ -6,12 +6,12 @@ const { Pool } = pg;
 // TLS config for the DB connection. TLS is enabled with DATABASE_SSL=true and,
 // by default, the server certificate IS verified. Provide a CA bundle with
 // DATABASE_CA (a file path) for private CAs. Verification can only be turned
-// off with an explicit DATABASE_SSL_INSECURE=true — never silently.
+// off with an explicit DATABASE_SSL_INSECURE=true. Never silently.
 function sslConfig() {
   if (process.env.DATABASE_SSL !== 'true') return undefined;
   if (process.env.DATABASE_SSL_INSECURE === 'true') {
     // eslint-disable-next-line no-console
-    console.warn('[db] DATABASE_SSL_INSECURE=true — server certificate verification is DISABLED');
+    console.warn('[db] DATABASE_SSL_INSECURE=true. Server certificate verification is DISABLED');
     return { rejectUnauthorized: false };
   }
   const ssl = { rejectUnauthorized: true };

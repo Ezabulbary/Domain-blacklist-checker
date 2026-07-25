@@ -1,4 +1,4 @@
--- 001_init.sql — Domain Blacklist Checker core schema (plan §6).
+-- 001_init.sql, Domain Blacklist Checker core schema (plan §6).
 --
 -- Expands the plan's minimal sketch into a production-ready schema with proper
 -- types, constraints, foreign keys and indexes:
@@ -10,7 +10,7 @@
 --   alerts(id, monitor_id, zone, status_change, created_at)
 --
 -- Targets PostgreSQL 13+ (identity columns, core gen_random_uuid). Safe to run
--- more than once — every object uses IF NOT EXISTS or is guarded.
+-- more than once. Every object uses IF NOT EXISTS or is guarded.
 
 -- gen_random_bytes() for API-key defaults.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -66,7 +66,7 @@ CREATE TRIGGER users_set_updated_at BEFORE UPDATE ON users
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- domains — one row per registrable domain we've ever seen.
+-- domains. One row per registrable domain we've ever seen.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS domains (
   id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS domains (
 );
 
 -- ---------------------------------------------------------------------------
--- checks — one row per reputation check (raw result kept as JSONB).
+-- checks. One row per reputation check (raw result kept as JSONB).
 -- user_id is nullable so anonymous / unauthenticated checks are still recorded.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS checks (
@@ -101,7 +101,7 @@ CREATE INDEX IF NOT EXISTS checks_user_created_idx  ON checks (user_id, created_
 CREATE INDEX IF NOT EXISTS checks_raw_gin_idx ON checks USING gin (raw_result jsonb_path_ops);
 
 -- ---------------------------------------------------------------------------
--- monitors — a user watching a domain on a schedule.
+-- monitors. A user watching a domain on a schedule.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS monitors (
   id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -127,7 +127,7 @@ CREATE TRIGGER monitors_set_updated_at BEFORE UPDATE ON monitors
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- alerts — a recorded reputation change for a monitor (drives notifications).
+-- alerts. A recorded reputation change for a monitor (drives notifications).
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS alerts (
   id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

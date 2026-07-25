@@ -8,13 +8,13 @@ import { ALL_ZONES, isListedAnswer, isBlockedAnswer, queryHostOf } from './zones
  * A blocklist answer is only meaningful if the list actually answers *us*
  * honestly. Three failure modes silently corrupt results:
  *
- *   1. ALWAYS-POSITIVE — subscription-only lists (e.g. invaluement) answer
+ *   1. ALWAYS-POSITIVE. Subscription-only lists (e.g. invaluement) answer
  *      "listed" to every query from a non-subscriber. Trusting them produces
  *      FALSE LISTINGS.
- *   2. SILENT — a list we're not authorized for (e.g. Spamhaus via a public
+ *   2. SILENT. A list we're not authorized for (e.g. Spamhaus via a public
  *      resolver) answers NXDOMAIN to everything, including its own published
  *      test entry. Trusting it produces FALSE "CLEAN" results.
- *   3. BLOCKED — the list answers with a refusal sentinel (127.255.255.x, or
+ *   3. BLOCKED. The list answers with a refusal sentinel (127.255.255.x, or
  *      URIBL's 127.0.0.1).
  *
  * We detect all three by probing each zone with a pair the DNSBL contract
@@ -62,7 +62,7 @@ export async function calibrateZone(z, resolver) {
   if (control.codes && isListedAnswer(z, control.codes)) {
     return {
       verdict: 'always-positive',
-      reason: 'answers "listed" for a control that can never be listed — needs a subscription',
+      reason: 'answers "listed" for a control that can never be listed. Needs a subscription',
       detail: control.codes.join(','),
     };
   }
@@ -75,7 +75,7 @@ export async function calibrateZone(z, resolver) {
     } catch {
       // A DQS zone that won't resolve almost always means a bad/expired key.
       if (z.queryHost) {
-        return { verdict: 'blocked', reason: `DQS key rejected or invalid (${control.error}) — check DBC_DQS_KEY` };
+        return { verdict: 'blocked', reason: `DQS key rejected or invalid (${control.error}). Check DBC_DQS_KEY` };
       }
       return { verdict: 'dead', reason: `zone does not resolve (${control.error})` };
     }
@@ -99,7 +99,7 @@ export async function calibrateZone(z, resolver) {
   // ignoring our queries and would report everything as clean.
   return {
     verdict: 'silent',
-    reason: 'ignores our queries (its own test entry returns "not listed") — would report everything as clean',
+    reason: 'ignores our queries (its own test entry returns "not listed"). Would report everything as clean',
   };
 }
 
@@ -143,13 +143,18 @@ export function loadCalibration() {
 
 export function saveCalibration(data) {
   cache = data;
+  // A run where nothing is trustworthy means the network or resolver was broken
+  // at that moment, not that every blocklist died. Persisting it would disable
+  // the whole app until the TTL expired, so keep it in memory only.
+  const anyTrusted = Object.values(data.zones).some((v) => isTrusted(v.verdict));
+  if (!anyTrusted) return data;
   try { writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2)); } catch { /* read-only fs is fine */ }
   return data;
 }
 
 /**
  * Get calibration, running it if there is no fresh result. Safe to call
- * concurrently — the in-flight run is shared.
+ * concurrently. The in-flight run is shared.
  */
 let inFlight = null;
 export async function getCalibration({ resolver, force = false } = {}) {

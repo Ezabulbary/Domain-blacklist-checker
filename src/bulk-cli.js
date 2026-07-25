@@ -57,7 +57,7 @@ const badge = { clean: '✓', listed: '!', blacklisted: '✗', unknown: '?' };
 console.log('');
 for (const r of results) {
   if (!r.ok) {
-    console.log(`  ✗ ${r.input.padEnd(32)} invalid — ${r.error}`);
+    console.log(`  ✗ ${r.input.padEnd(32)} invalid: ${r.error}`);
     continue;
   }
   const b = badge[r.verdict] || '·';
@@ -68,7 +68,7 @@ for (const r of results) {
 
 console.log(
   `\n  ${summary.total} domains in ${((Date.now() - startedAt) / 1000).toFixed(1)}s` +
-    `  —  ${summary.clean} clean · ${summary.listed} listed · ${summary.blacklisted} blacklisted · ` +
+    `, ${summary.clean} clean · ${summary.listed} listed · ${summary.blacklisted} blacklisted · ` +
     `${summary.unknown} unknown · ${summary.invalid} invalid`,
 );
 if (skipped.blank || skipped.truncated) {

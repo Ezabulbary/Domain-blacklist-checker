@@ -23,7 +23,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const resolver = buildResolver();
 
 // Tiny in-memory cache so repeat lookups don't re-hammer the DNSBLs. In
-// production this becomes Redis with a 15-30 min TTL (plan §5.3) — caching is
+// production this becomes Redis with a 15-30 min TTL (plan §5.3). Caching is
 // mandatory, not optional, to stay inside free query limits.
 const CACHE_TTL_MS = Number(process.env.DBC_CACHE_TTL_MS ?? 15 * 60 * 1000);
 const CACHE_MAX = Number(process.env.DBC_CACHE_MAX ?? 5000);
@@ -44,7 +44,7 @@ function cacheSet(key, value) {
   while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
 }
 
-// Very small fixed-window rate limiter per IP (plan §5.5) — protect our own IP
+// Very small fixed-window rate limiter per IP (plan §5.5). Protect our own IP
 // from being blocked by the DNSBLs due to a caller's abuse.
 const RATE_MAX = Number(process.env.DBC_RATE_MAX ?? 30);
 const RATE_WINDOW_MS = Number(process.env.DBC_RATE_WINDOW_MS ?? 60 * 1000);
@@ -57,7 +57,7 @@ let lastSweep = 0;
 // `cost` lets an expensive request (a bulk check fanning out thousands of DNS
 // queries) consume more of the budget than a single lookup, so bulk can't be
 // used to amplify load. `id` is the bucket (IP, or the API key) and `max` its
-// budget — authenticated callers get a higher one.
+// budget. Authenticated callers get a higher one.
 function rateLimited(id, cost = 1, max = RATE_MAX) {
   const now = Date.now();
   // Periodically drop expired windows so the map can't grow without bound from
@@ -81,7 +81,7 @@ async function authOk(req, reply) {
   const key = (req.headers['x-api-key'] || req.query.api_key || '').toString().trim();
   if (!key) {
     if (REQUIRE_KEY) {
-      reply.code(401).send({ ok: false, error: 'API key required — send it as the X-API-Key header' });
+      reply.code(401).send({ ok: false, error: 'API key required. Send it as the X-API-Key header' });
       return false;
     }
     return true;
@@ -104,7 +104,7 @@ function limited(req, cost = 1) {
 }
 
 // Persist a successful check when a database is configured. Never let a DB
-// hiccup break the response — persistence is best-effort here.
+// hiccup break the response. Persistence is best-effort here.
 async function persist(result) {
   if (!dbEnabled() || !result.ok) return;
   try {
@@ -208,7 +208,7 @@ export function buildServer() {
         requireKey: REQUIRE_KEY,
         note: r.persisted
           ? 'Send this as the X-API-Key header.'
-          : 'Send this as the X-API-Key header. No database is configured, so this key is kept in memory and is lost on restart — set DATABASE_URL to persist keys.',
+          : 'Send this as the X-API-Key header. No database is configured, so this key is kept in memory and is lost on restart. Set DATABASE_URL to persist keys.',
       };
     } catch (e) {
       return reply.code(500).send({ ok: false, error: e.message });
@@ -240,7 +240,7 @@ export function buildServer() {
     return { ok: true, domain: host, ...(await checkAuth(host, { resolver, selectors: sel ? [sel] : undefined })) };
   });
 
-  // Check history for a domain — only when a database is configured.
+  // Check history for a domain. Only when a database is configured.
   app.get('/api/history', async (req, reply) => {
     if (!dbEnabled()) return reply.code(501).send({ ok: false, error: 'history requires DATABASE_URL' });
     if (!(await authOk(req, reply))) return;

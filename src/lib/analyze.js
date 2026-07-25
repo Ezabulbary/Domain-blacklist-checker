@@ -4,7 +4,7 @@ import { recommend } from './recommend.js';
 import { buildResolver } from './resolve.js';
 
 /**
- * Unified deliverability report — the data behind the Overview dashboard.
+ * Unified deliverability report. The data behind the Overview dashboard.
  * Combines the blacklist check and authentication health into one risk score,
  * plus recommendations and a placeholder for ESP-sourced signals.
  *
@@ -65,7 +65,7 @@ export async function analyzeDomain(input, opts = {}) {
     dns: bl.dns,
 
     // ESP-sourced engagement/reputation metrics. These are NOT derivable from
-    // DNS — they come from the sender's ESP/MTA. We surface whatever is provided
+    // DNS. They come from the sender's ESP/MTA. We surface whatever is provided
     // via opts.signals and mark the rest "not connected" rather than fabricate.
     signals: buildSignals(opts.signals),
 

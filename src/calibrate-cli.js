@@ -37,12 +37,12 @@ console.log('  ' + Object.entries(t).map(([k, v]) => `${k}: ${v}`).join(' · '))
 const bad = rows.filter((r) => r.verdict === 'always-positive');
 if (bad.length) {
   console.log(`\n  Excluded as unreliable (would produce FALSE listings):`);
-  bad.forEach((r) => console.log(`    • ${r.name} — ${r.reason}`));
+  bad.forEach((r) => console.log(`    • ${r.name}: ${r.reason}`));
 }
 const silent = rows.filter((r) => r.verdict === 'silent' || r.verdict === 'blocked');
 if (silent.length) {
   console.log(`\n  Not answering us (their "clean" would be meaningless):`);
-  silent.forEach((r) => console.log(`    • ${r.name} — ${r.reason}`));
+  silent.forEach((r) => console.log(`    • ${r.name}: ${r.reason}`));
   console.log('\n  Fix: run your own recursive resolver (Unbound) and set DBC_RESOLVERS to it,');
   console.log('  and/or get a free Spamhaus DQS key. Then re-run: npm run calibrate');
 }

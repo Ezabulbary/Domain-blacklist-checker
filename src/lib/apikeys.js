@@ -2,13 +2,13 @@ import { randomBytes } from 'node:crypto';
 import { dbEnabled } from '../db/pool.js';
 import { db } from '../db/index.js';
 
-// API keys are OPTIONAL by default — the API works without one. A key lets you
+// API keys are OPTIONAL by default. The API works without one. A key lets you
 // authenticate (for higher rate limits / attribution), and the server can be
 // told to require one with DBC_REQUIRE_KEY=true.
 //
 // When a database is configured, keys live in the `users` table (persistent).
 // Without a database we keep them in memory so the feature still works for a
-// demo — but those keys are lost on restart.
+// demo. But those keys are lost on restart.
 
 const mem = new Map(); // apiKey -> { plan, createdAt }
 
@@ -23,7 +23,7 @@ export async function createApiKey({ email } = {}) {
       const u = await db.users.createUser({ email: mail, apiKey });
       return { apiKey: u.api_key, plan: u.plan, persisted: true };
     } catch {
-      // Email already exists — rotate that user's key instead.
+      // Email already exists. Rotate that user's key instead.
       const existing = await db.users.getUserByEmail(mail);
       if (existing) {
         const r = await db.users.rotateApiKey(existing.id, apiKey);

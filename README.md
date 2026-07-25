@@ -1,20 +1,20 @@
 # Domain Blacklist Checker
 
-Check whether a domain — and the IPs behind its A record — are listed on spam /
-malware **DNSBLs**, with a **weighted 0–100 reputation score** and **delisting
-links** for every hit.
+Check whether a domain, and the IPs behind its A record, are listed on spam or
+malware **DNS blocklists**, with a **weighted 0-100 reputation score** and a
+**removal link** for every hit.
 
-Single-domain and bulk checks against **~68 DNSBL/URIBL zones** (the mxtoolbox
-set), a full per-blacklist results table (`LISTED / OK / TIMEOUT` with reason,
-TTL and response time), a one-page UI, and no auth. Built so the well-known
-DNSBL gotchas are handled from day one (timeout ≠ clean, weighted scoring,
-public-/key-resolver detection, caching, rate limiting).
+Single and bulk checks across the full blocklist catalog, one row per list
+(`LISTED / OK / TIMEOUT / SKIPPED` with reason, TTL and response time), a
+one-page UI, and no login required. Each list is calibrated before its answer is
+trusted, so a timeout is never reported as clean and a list that cannot answer
+reliably is marked skipped instead of guessed.
 
 ### Blacklist coverage & the results table
 
 A check resolves the domain to its IP(s) and queries **every** zone in the
-catalog (`src/lib/zones.js`) — IP-based lists against each A record, domain/URI
-lists against the domain — then returns a row per blacklist:
+catalog (`src/lib/zones.js`), IP-based lists against each A record, domain/URI
+lists against the domain. Then returns a row per blacklist:
 
 ```
 Checking getitok.top which resolves to 104.21.18.37 against 69 known blacklists
@@ -30,16 +30,16 @@ TIMEOUT   ivmURI (key)     requires key (unverified)  …
 Every hostname in the catalog was **validated against live DNS** (SOA/NS + the
 `127.0.0.2` test-point), not copied from a list. Each zone is tagged:
 
-- **live** — responds normally.
-- **requiresKey** — Barracuda, Abusix, invaluement, Spamhaus (public resolver),
+- **live**. Responds normally.
+- **requiresKey**, Barracuda, Abusix, invaluement, Spamhaus (public resolver),
   Sender Score. These return a positive for *every* query when you're not
   authorized, so a "listed" answer is downgraded to **unknown** unless you opt
   in with `DBC_TRUST_KEYED=true` (i.e. you've pointed `DBC_RESOLVERS` at an
   authorized resolver / DQS). The `127.255.255.x` block sentinels are always
   treated as unknown.
-- **defunct** — SORBS (shut 2024), MSRBL, DRMX, HIL/HIL2. Kept for parity; they
+- **defunct**, SORBS (shut 2024), MSRBL, DRMX, HIL/HIL2. Kept for parity; they
   answer NXDOMAIN → shown OK.
-- **unverified** — couldn't confirm from the test host; low weight so they can't
+- **unverified**. Couldn't confirm from the test host; low weight so they can't
   skew the score.
 
 Combined lists like Hostkarma use a `listedCodes` filter so their `127.0.0.1`
@@ -60,7 +60,7 @@ input  →  normalize (lowercase, strip scheme/www/path, punycode,
 
 A DNSBL lookup is just an `A`-record query: for IP `1.2.3.4` on
 `zen.spamhaus.org` we query `4.3.2.1.zen.spamhaus.org`. A `127.0.0.x` answer
-means **listed**; `NXDOMAIN` means **clean**; a timeout means **unknown** — and
+means **listed**; `NXDOMAIN` means **clean**; a timeout means **unknown**. And
 unknown is never reported as clean.
 
 ## Quick start
@@ -99,7 +99,7 @@ npm test
 ### API keys (optional)
 
 The API is open by default. `POST /api/keys` (optional `{ "email": "..." }`)
-returns an API key; send it as the `X-API-Key` header to authenticate — keyed
+returns an API key; send it as the `X-API-Key` header to authenticate. Keyed
 requests get a higher rate limit (`DBC_RATE_MAX_KEYED`). Set
 `DBC_REQUIRE_KEY=true` to make a key mandatory. Keys persist in the `users` table
 when `DATABASE_URL` is set, otherwise they're kept in memory (lost on restart).
@@ -108,24 +108,24 @@ key into every code sample.
 
 ### Deliverability report (`/api/analyze`)
 
-The **Analyze** tab and `/api/analyze` combine everything into one report — the
+The **Analyze** tab and `/api/analyze` combine everything into one report. The
 implementable slice of a full deliverability monitor:
 
-- **Risk score (0-100) + standing** — blends blacklist reputation (60%) and
+- **Risk score (0-100) + standing**. Blends blacklist reputation (60%) and
   authentication health (40%).
 - **Authentication health** (real, from live DNS):
-  - **SPF** — record, all-qualifier (`-all`/`~all`), and the 10-lookup budget.
-  - **DKIM** — probes common selectors (google, selector1/2, k1, …); pass your
+  - **SPF**. Record, all-qualifier (`-all`/`~all`), and the 10-lookup budget.
+  - **DKIM**. Probes common selectors (google, selector1/2, k1, …); pass your
     own with `?selector=`.
-  - **DMARC** — policy (`p=`), `sp`, `pct`, `rua`, alignment.
+  - **DMARC**. Policy (`p=`), `sp`, `pct`, `rua`, alignment.
   - **MX** and **PTR/rDNS** (forward-confirmed) for resolved IPs.
   - → a 0-100 **auth score**.
-- **Blacklists** — the full 90+-zone table, now **categorized** (email / domain /
+- **Blacklists**. The full blocklist table, **categorized** (email / domain /
   ip / spam / malware) so the UI can filter.
-- **Recommendations** — prioritized, actionable: missing/weak SPF, DMARC
+- **Recommendations**. Prioritized, actionable: missing/weak SPF, DMARC
   `p=none`, no DKIM, each listing + its delist link, PTR mismatch.
 - **Engagement & reputation signals** (bounce/complaint/open rate, Sender Score,
-  spam traps, volume) — these come from your **ESP/MTA, not DNS**, so they are
+  spam traps, volume). These come from your **ESP/MTA, not DNS**, so they are
   shown as *not connected* until wired in. The report models them and lists
   their sources rather than fabricating numbers.
 
@@ -133,8 +133,8 @@ implementable slice of a full deliverability monitor:
 
 Check a whole list in one request. The body can be:
 
-- JSON — `{ "domains": ["a.com", "b.com"] }` or `{ "text": "a.com\nb.com" }`
-- raw `text/plain` / `text/csv` — a pasted list or an uploaded `.txt`/`.csv`
+- JSON, `{ "domains": ["a.com", "b.com"] }` or `{ "text": "a.com\nb.com" }`
+- raw `text/plain` / `text/csv`. A pasted list or an uploaded `.txt`/`.csv`
   (newline-, comma-, semicolon-, tab- or space-separated; the first CSV field wins)
 
 Add `?format=csv` to download a CSV report instead of JSON.
@@ -231,7 +231,7 @@ Relationships: `users 1─* checks`, `domains 1─* checks`, `users 1─* monito
 only nulls the `user_id` on their checks (the check history for a domain is
 retained).
 
-The data-access layer is in `src/db/repositories/` — one module per table with
+The data-access layer is in `src/db/repositories/`. One module per table with
 typed CRUD (e.g. `db.checks.saveCheck(result, { userId })`,
 `db.monitors.claimDueMonitors()`, `db.alerts.recordChanges(...)`) imported via
 `src/db/index.js`.
@@ -248,7 +248,7 @@ TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/blacklist_test npm
 | Env var | Default | Purpose |
 |---|---|---|
 | `PORT` / `HOST` | `3000` / `0.0.0.0` | Server bind. |
-| `DATABASE_URL` | — | Postgres connection string. Unset = DB-less. |
+| `DATABASE_URL` |, | Postgres connection string. Unset = DB-less. |
 | `DATABASE_SSL` | `false` | Set `true` for managed providers requiring TLS. |
 | `DBC_RESOLVERS` | system | Comma-separated DNS servers. **Set this to your own recursive resolver in production** (see below). |
 | `DBC_TRUST_KEYED` | `false` | Trust "listed" answers from key-required zones (set only when `DBC_RESOLVERS` is an authorized resolver / DQS). |
@@ -267,14 +267,14 @@ These are the traps that sink most first attempts:
    so you point at your own recursive resolver (Unbound). Free
    [Spamhaus DQS](https://www.spamhaus.com/free-trial/) keys are the alternative.
 2. **Timeout ≠ clean.** A query that times out or SERVFAILs is `listed: null`
-   (**unknown**) and is *excluded from the score denominator* — it can never
+   (**unknown**) and is *excluded from the score denominator*. It can never
    produce a false all-clear.
 3. **Caching is mandatory, not optional.** Most DNSBLs cap free use around
    ~100k queries/day. Results are cached (in-memory MVP; swap for Redis).
 4. **Rate limit your own API** so one abuser can't get your query IP blocked.
 5. **Weighted scoring.** A Spamhaus hit (`weight 40`, critical) tanks the score;
    a SORBS hit (`weight 5`, informational) barely moves it.
-6. **Every listing is actionable** — each carries the list name, what the return
+6. **Every listing is actionable**. Each carries the list name, what the return
    code means, and a delisting link.
 
 > **Deployment note:** cloud provider IP ranges (AWS/GCP/Azure) are themselves
@@ -298,8 +298,8 @@ src/
   db/
     pool.js       pg pool (optional; null when DATABASE_URL unset) + txn helper
     migrate.js    migration runner (tracks schema_migrations)
-    migrations/   001_init.sql — the plan §6 schema
-    repositories/ users, domains, checks, monitors, alerts — typed CRUD
+    migrations/   001_init.sql. The plan §6 schema
+    repositories/ users, domains, checks, monitors, alerts. Typed CRUD
     index.js      barrel: import { db } from './db/index.js'
   server.js       Fastify: /api/check, /api/check/bulk, /api/history, /api/zones
   cli.js          single-domain command-line checker
@@ -314,10 +314,10 @@ docker-compose.yml  local Postgres for development
 
 The MVP here is Phase 0. Planned next:
 
-- **v1** — Redis cache, bundled Unbound resolver, Google Safe Browsing +
+- **v1**, Redis cache, bundled Unbound resolver, Google Safe Browsing +
   URLhaus, SPF/DKIM/DMARC health score, richer delist guide.
-- **v2** — auth, bulk CSV upload, REST API keys, check history.
-- **v3** — scheduled monitoring + email/Slack alerts, PDF reports, white-label.
+- **v2**. Auth, bulk CSV upload, REST API keys, check history.
+- **v3**. Scheduled monitoring + email/Slack alerts, PDF reports, white-label.
 
 ## License
 

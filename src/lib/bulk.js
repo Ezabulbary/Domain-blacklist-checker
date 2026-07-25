@@ -5,7 +5,7 @@ import { buildResolver } from './resolve.js';
  * Check many domains with a bounded concurrency pool.
  *
  * Each single domain check already fans out to ~20 DNS queries, so we do NOT
- * run all domains at once — that would swamp the resolver and trip DNSBL rate
+ * run all domains at once. That would swamp the resolver and trip DNSBL rate
  * limits (plan §5.3/§5.5). We run `concurrency` domains in parallel and stream
  * through the rest as slots free up.
  *

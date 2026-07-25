@@ -31,7 +31,7 @@ export async function getUserByEmail(email) {
   return rows[0] ?? null;
 }
 
-/** Look up a user by API key — the auth path for the REST API (v2). */
+/** Look up a user by API key. The auth path for the REST API (v2). */
 export async function getUserByApiKey(apiKey) {
   const { rows } = await query(`SELECT ${COLS} FROM users WHERE api_key = $1`, [apiKey]);
   return rows[0] ?? null;

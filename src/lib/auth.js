@@ -107,7 +107,7 @@ export async function checkDkim(domain, selectors, resolver) {
           found.push({ selector: sel, keyType: (txt.match(/k=([a-z0-9]+)/i) || [])[1] || 'rsa' });
         }
       } catch {
-        /* selector not published — normal */
+        /* selector not published. Normal */
       }
     }),
   );
@@ -115,7 +115,7 @@ export async function checkDkim(domain, selectors, resolver) {
     present: found.length > 0,
     status: found.length > 0 ? 'pass' : 'unknown',
     selectors: found,
-    note: found.length ? undefined : 'no key found for common selectors — provide the real selector to confirm',
+    note: found.length ? undefined : 'no key found for common selectors. Provide the real selector to confirm',
   };
 }
 

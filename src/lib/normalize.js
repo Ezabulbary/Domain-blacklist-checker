@@ -50,7 +50,7 @@ export function normalizeDomain(raw) {
     return result;
   }
 
-  // IPv4 literal? Then there's no registrable domain — the IP is the subject.
+  // IPv4 literal? Then there's no registrable domain. The IP is the subject.
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
     const octets = host.split('.').map(Number);
     if (octets.every((o) => o >= 0 && o <= 255)) {

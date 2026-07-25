@@ -1,7 +1,7 @@
 import { Resolver } from 'node:dns/promises';
 
 // A dedicated resolver so we can control timeout/tries and, in production, point
-// at our own recursive resolver (Unbound) — public resolvers like 8.8.8.8 get
+// at our own recursive resolver (Unbound). Public resolvers like 8.8.8.8 get
 // blocked by Spamhaus and poison every result (plan §5.1).
 //
 //   DBC_RESOLVERS=127.0.0.1,192.168.1.53  (comma-separated)
@@ -22,7 +22,7 @@ export function buildResolver(servers, opts = {}) {
     // setups (notably Windows) it comes up with NO servers, so every query
     // fails instantly and the whole app looks broken. Fall back to public
     // resolvers in that case so the tool at least works. (Set DBC_RESOLVERS to
-    // your own recursive resolver in production — see plan §5.1.)
+    // your own recursive resolver in production. See plan §5.1.)
     try {
       if (!resolver.getServers || resolver.getServers().length === 0) {
         resolver.setServers(['1.1.1.1', '8.8.8.8']);
@@ -74,12 +74,12 @@ export const reverseIp = (ip) => ip.split('.').reverse().join('.');
  * Query a single (subject, zone) pair, capturing TTL and response time.
  *
  * A listed entry answers with a 127.0.0.x A record; a clean entry answers
- * NXDOMAIN/ENOTFOUND. Crucially, a timeout is NOT "clean" — it's `listed: null`
+ * NXDOMAIN/ENOTFOUND. Crucially, a timeout is NOT "clean". It's `listed: null`
  * (unknown), so we never give a false all-clear (plan §5.4).
  *
  * Combined lists (e.g. Hostkarma) encode a *whitelist* in 127.0.0.1: when a
  * zone declares `listedCodes`, a hit only counts as listed if a returned code
- * is in that set — otherwise it's a clean/whitelist answer, not a listing.
+ * is in that set. Otherwise it's a clean/whitelist answer, not a listing.
  *
  * @param subject reversed IP (for ip zones) or the domain (for domain zones)
  * @returns { zone, listed: true|false|null, codes?, ttl?, responseMs, error? }
@@ -100,7 +100,7 @@ export async function queryZone(subject, zoneMeta, resolver, opts = {}) {
     const ttlOut = Number.isFinite(ttl) ? ttl : null;
 
     // 127.255.255.x is the conventional "query blocked / not authorized"
-    // sentinel range (Spamhaus .254, Sender Score .255, etc.) — never a real
+    // sentinel range (Spamhaus .254, Sender Score .255, etc.). Never a real
     // listing; report as unknown (plan §5.1).
     if (codes.some((c) => c.startsWith('127.255.255.'))) {
       return { ...zoneMeta, listed: null, error: 'PUBLIC_RESOLVER_BLOCKED', codes, responseMs };

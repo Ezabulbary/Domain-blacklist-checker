@@ -13,7 +13,7 @@ import { getCalibration, isTrusted } from './calibrate.js';
  *
  * Every zone query is bounded by its own 3s timeout; the whole fan-out is
  * additionally capped at `overallTimeoutMs` so one dead zone can't hang the
- * request — anything unfinished is reported as a TIMEOUT (unknown), not clean.
+ * request. Anything unfinished is reported as a TIMEOUT (unknown), not clean.
  *
  * @param {string} input  raw user input
  * @param {object} [opts] { resolver, overallTimeoutMs }
@@ -31,7 +31,7 @@ export async function checkDomain(input, opts = {}) {
   // being reported as a timeout.
   const resolver = opts.resolver || buildResolver(null, { timeout: 5000, tries: 2 });
   const overallTimeoutMs = opts.overallTimeoutMs ?? 25000;
-  // Query a moderate number at a time — firing all ~120 at once overloads the
+  // Query a moderate number at a time. Firing all ~120 at once overloads the
   // resolver and *causes* timeouts, which is the opposite of what we want.
   const concurrency = opts.concurrency ?? Number(process.env.DBC_QUERY_CONCURRENCY ?? 12);
   const retries = opts.retries ?? Number(process.env.DBC_QUERY_RETRIES ?? 2);
@@ -39,13 +39,13 @@ export async function checkDomain(input, opts = {}) {
   // multiplies the query count for little value. Cap the IPs we test.
   const maxIps = opts.maxIps ?? Number(process.env.DBC_MAX_IPS ?? 2);
 
-  // For a bare IP literal there is no domain-level lookup — only IP zones.
+  // For a bare IP literal there is no domain-level lookup. Only IP zones.
   const dns = norm.isIp
     ? { a: [norm.host], aaaa: [], mx: [], errors: {} }
     : await resolveDomain(norm.domain, resolver);
 
   // No A record AND the lookups errored (not a clean NXDOMAIN) means the
-  // resolver itself couldn't reach a DNS server — every domain then looks empty
+  // resolver itself couldn't reach a DNS server. Every domain then looks empty
   // and "the same". Surface it so the UI can tell the user to set DBC_RESOLVERS.
   const dnsError = !norm.isIp && dns.a.length === 0 && Object.keys(dns.errors).length > 0;
 
@@ -61,7 +61,7 @@ export async function checkDomain(input, opts = {}) {
   const shouldQuery = (z) => {
     const v = cal && cal.zones && cal.zones[z.zone];
     if (v) return isTrusted(v.verdict);
-    // No calibration available — fall back to the static catalog status.
+    // No calibration available. Fall back to the static catalog status.
     return z.status !== 'defunct' && !(z.status === 'requiresKey' && !trustKeyed);
   };
   const skipRow = (z, subject) => {
@@ -99,19 +99,24 @@ export async function checkDomain(input, opts = {}) {
   }
 
   const raw = await runWithRetry(jobs, concurrency, overallTimeoutMs, retries);
-  const results = raw.map((r) => ({ ...r, subject: r.subject ?? r._subject }));
+  const perSubject = raw.map((r) => ({ ...r, subject: r.subject ?? r._subject }));
 
-  // Weighted score / verdict / listings / unknowns — only over queried zones.
-  const summary = scoreResults(results);
+  // A domain with several A records queries each IP zone once per IP, which
+  // would count the same blocklist several times. Collapse to ONE result per
+  // blocklist (worst state wins, listed subjects merged) so every number on
+  // screen refers to blocklists and they all add up to the catalog size.
+  const results = collapseByZone([...perSubject, ...skippedRows]);
 
-  // Full per-zone table: queried rows + skipped (inactive / needs-key) rows.
-  const table = [...results, ...skippedRows].map(toRow);
+  // Weighted score / verdict / listings / unknowns, over one entry per list.
+  const summary = scoreResults(results.filter((r) => !r.skipped));
+
+  const table = results.map(toRow);
   const listedCount = table.filter((r) => r.state === 'listed').length;
   const timeoutCount = table.filter((r) => r.state === 'timeout').length;
   const okCount = table.filter((r) => r.state === 'ok').length;
   const skippedCount = table.filter((r) => r.state === 'skipped').length;
-  // How many distinct blocklists actually answered us — the meaningful number.
-  const trustedZones = new Set(table.filter((r) => r.state !== 'skipped').map((r) => r.zone)).size;
+  // Blocklists that actually answered us: listed + clean + timeout.
+  const trustedZones = listedCount + okCount + timeoutCount;
 
   // Sort: listed → timeout → ok → skipped; alphabetical within each group.
   const order = { listed: 0, timeout: 1, ok: 2, skipped: 3 };
@@ -141,6 +146,31 @@ export async function checkDomain(input, opts = {}) {
   };
 }
 
+// Worst-first ranking used when the same blocklist was queried for several IPs.
+const stateRank = (r) => (r.skipped ? 3 : r.listed === true ? 0 : r.listed === null ? 1 : 2);
+
+/**
+ * Reduce many per-subject results to one entry per blocklist. The worst state
+ * wins (listed beats timeout beats clean), and every subject that was listed is
+ * kept so the row can say exactly which IP is on the list.
+ */
+function collapseByZone(rows) {
+  const byZone = new Map();
+  for (const row of rows) {
+    const prev = byZone.get(row.zone);
+    if (!prev) {
+      byZone.set(row.zone, { ...row, subjects: row.listed === true ? [row.subject] : [] });
+      continue;
+    }
+    if (row.listed === true && prev.listed === true) {
+      if (!prev.subjects.includes(row.subject)) prev.subjects.push(row.subject);
+    } else if (stateRank(row) < stateRank(prev)) {
+      byZone.set(row.zone, { ...row, subjects: row.listed === true ? [row.subject] : [] });
+    }
+  }
+  return [...byZone.values()];
+}
+
 /** Normalize a raw zone result into a display row for the results table. */
 function toRow(r) {
   const state = r.skipped
@@ -148,9 +178,13 @@ function toRow(r) {
     : r.listed === true ? 'listed' : r.listed === false ? 'ok' : 'timeout';
   const codeMap = RETURN_CODES[r.zone];
   const meanings = codeMap && r.codes ? r.codes.map((c) => codeMap[c]).filter(Boolean) : [];
+  const subjects = r.subjects && r.subjects.length ? r.subjects : [r.subject];
   let reason = '';
-  if (state === 'listed') reason = `${r.subject} was listed`;
-  else if (state === 'timeout') reason = timeoutReason(r);
+  if (state === 'listed') {
+    reason = subjects.length > 1
+      ? `${subjects.join(', ')} were listed`
+      : `${subjects[0]} was listed`;
+  } else if (state === 'timeout') reason = timeoutReason(r);
   else if (state === 'skipped') reason = r.skipReason || 'not queried';
   return {
     name: r.name || r.zone,
@@ -159,6 +193,7 @@ function toRow(r) {
     category: r.category || 'ip',
     severity: r.severity || 'low',
     subject: r.subject,
+    subjects,
     state, // 'listed' | 'ok' | 'timeout' | 'skipped'
     codes: r.codes || [],
     meanings,
@@ -180,7 +215,7 @@ function timeoutReason(r) {
 }
 
 // A timeout worth retrying is one where we got no definitive answer for a
-// transient/network reason — NOT a "needs a key" / "blocked" result, which a
+// transient/network reason, NOT a "needs a key" / "blocked" result, which a
 // retry can't fix.
 const PERMANENT = new Set(['REQUIRES_KEY', 'PUBLIC_RESOLVER_BLOCKED']);
 const isRetryable = (r) => r && r.listed === null && !PERMANENT.has(r.error);
@@ -207,7 +242,7 @@ async function runWithRetry(jobs, concurrency, cap, retries) {
 /**
  * Run all jobs through a bounded concurrency pool, never exceeding `cap` ms
  * overall. Running a few dozen at a time (instead of all ~140 at once) avoids
- * swamping the resolver — which itself causes spurious timeouts — and is the
+ * swamping the resolver. Which itself causes spurious timeouts. And is the
  * polite thing to do to the DNSBLs (plan §5.5). Jobs still unfinished when the
  * cap fires are folded in as their own zone row with a TIMEOUT state, so the
  * table always lists every blacklist. Each job resolves (never rejects).

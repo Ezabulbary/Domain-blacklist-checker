@@ -17,7 +17,7 @@ const MIGRATIONS_DIR = join(__dirname, 'migrations');
  */
 export async function migrate({ log = console.log } = {}) {
   const pool = getPool();
-  if (!pool) throw new Error('DATABASE_URL is not set — cannot migrate');
+  if (!pool) throw new Error('DATABASE_URL is not set. Cannot migrate');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
