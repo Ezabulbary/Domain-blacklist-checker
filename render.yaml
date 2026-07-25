@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: domain-blacklist-checker
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: HOST
+        value: 0.0.0.0
+      # --- Spamhaus DQS key ---
+      # Set DBC_RESOLVERS to your personal DQS resolver address.
+      # Format: <your-dqs-key>.zen.dq.spamhaus.net
+      # Get your free key at: https://www.spamhaus.com/free-checker/
+      - key: DBC_RESOLVERS
+        sync: false   # set manually in Render dashboard (keep key secret)
+      # Enable key-required zones (Spamhaus ZEN, DBL, etc.) once DQS is set.
+      - key: DBC_TRUST_KEYED
+        value: "true"
+      # Trust X-Forwarded-For from Render's edge proxy for accurate rate limiting.
+      - key: DBC_TRUST_PROXY
+        value: "true"
+      # Cache: 15 min TTL, max 2000 entries (safe for free 512 MB RAM)
+      - key: DBC_CACHE_TTL_MS
+        value: "900000"
+      - key: DBC_CACHE_MAX
+        value: "2000"
+      # Rate limit: 20 req/min per IP (free tier is single-instance anyway)
+      - key: DBC_RATE_MAX
+        value: "20"
+      # Bulk: keep concurrency low to avoid hammering DNSBLs on free tier
+      - key: DBC_BULK_MAX
+        value: "50"
+      - key: DBC_BULK_CONCURRENCY
+        value: "3"
