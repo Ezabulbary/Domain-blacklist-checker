@@ -39,6 +39,20 @@ const CACHE_TTL_MS = Number(process.env.DBC_CALIBRATION_TTL_MS ?? 12 * 60 * 60 *
 
 let cache = null; // { at, resolvers, zones: { [zone]: {verdict, reason} } }
 
+/** Does this DNS zone still exist? A shut down blocklist has no SOA and no NS. */
+async function zoneExists(host, resolver) {
+  try {
+    await resolver.resolveSoa(host);
+    return true;
+  } catch { /* fall through to NS */ }
+  try {
+    await resolver.resolveNs(host);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Probe one zone: returns { verdict, reason, detail }. */
 export async function calibrateZone(z, resolver) {
   const host = queryHostOf(z);
@@ -82,10 +96,14 @@ export async function calibrateZone(z, resolver) {
     return { verdict: 'blocked', reason: `no usable answer (${control.error})` };
   }
 
-  // No published test point -> we cannot prove discrimination, but the zone is
-  // answering and is not always-positive, so a positive from it is meaningful.
+  // No published test point. We cannot prove discrimination, so the zone has to
+  // at least exist: a shut down list also answers NXDOMAIN to everything, and
+  // counting it as clean would be a false all-clear.
   if (!z.testPoint) {
-    return { verdict: 'answering', reason: 'alive, no published test entry to verify against' };
+    if (!(await zoneExists(host, resolver))) {
+      return { verdict: 'dead', reason: 'this blocklist no longer exists (its DNS zone is gone)' };
+    }
+    return { verdict: 'answering', reason: 'live and answering, no published test entry to verify against' };
   }
 
   const tp = await ask(z.testPoint);
@@ -95,11 +113,17 @@ export async function calibrateZone(z, resolver) {
   if (tp.codes && isListedAnswer(z, tp.codes)) {
     return { verdict: 'verified', reason: 'test entry listed, control clean', detail: tp.codes.join(',') };
   }
-  // The zone answers, but its own test entry is not listed for us: it is
-  // ignoring our queries and would report everything as clean.
+  // The test entry is not listed for us. Two very different causes, so check
+  // whether the zone exists at all before blaming it for ignoring us: a shut
+  // down blocklist (MSRBL, DRMX, SORBS) answers NXDOMAIN because it is gone,
+  // while a live one (Spamhaus via a public resolver) answers NXDOMAIN because
+  // it is deliberately ignoring unauthorized queries.
+  if (!(await zoneExists(host, resolver))) {
+    return { verdict: 'dead', reason: 'this blocklist no longer exists (its DNS zone is gone)' };
+  }
   return {
     verdict: 'silent',
-    reason: 'ignores our queries (its own test entry returns "not listed"). Would report everything as clean',
+    reason: 'the list is up but ignores our queries (its own test entry comes back "not listed")',
   };
 }
 

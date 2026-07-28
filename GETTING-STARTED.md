@@ -68,6 +68,93 @@ npm run check:bulk domains.txt    # file theke bulk
 
 ---
 
+## 3b. Bulk check (onek domain ekshathe)
+
+### Kivabe process hoy (pipeline)
+
+```
+  tomar list (textarea / .txt / .csv / API body)
+        |
+   1. parse      har line theke domain ber kore (comma, tab, space, semicolon-o cholbe)
+        |
+   2. dedupe     ekই domain duibar thakle ekbar-i check hoy
+        |
+   3. cap        DBC_BULK_MAX (default 500) porjonto neya hoy
+        |
+   4. pool       ekshathe DBC_BULK_CONCURRENCY ta domain (default 5).
+                 Ekta ses hole porerta dhuke. Sob ekshathe chare na.
+        |
+   5. har domain er jonno puro check:
+        normalize -> DNS resolve (A/AAAA/MX)
+                  -> trusted blocklist gulo query (nijeo ekta pool, 12 at a time)
+                  -> timeout hole retry
+                  -> ek blocklist = ek row
+                  -> weighted score
+        |
+   6. cache      result 15 min cache e thake. Ekই domain abar ele DNS query hoy na
+        |
+   7. output     summary + per-domain result + CSV
+```
+
+**Keno pool, keno ekshathe sob na?** Ekta domain-i 36+ ta DNS query kore. 500 ta
+domain ekshathe chere dile 18,000 query ek shathe jabe, resolver bose jabe ar
+blocklist gulo tomar IP block kore debe. Pool ei jonno.
+
+### Koto tara tari (mepe dekha)
+
+| Concurrency | Speed |
+|---|---|
+| 5 (default) | ~111 domain / minute |
+| 10 | ~120 domain / minute |
+| 20 | ~140 domain / minute |
+
+Mane: **500 domain = 4 theke 5 minute**. 5000 domain = prai 40 minute.
+
+Repeat korle onek fast: server e cache thake, tai ekই list abar dile
+**3.7 sec -> 0 sec**.
+
+### Boro list er jonno kon poddhoti
+
+**1. CLI (5000+ domain er jonno best)** . HTTP timeout er somossa nai, progress dekhay:
+```
+npm run check:bulk -- --csv domains.txt > report.csv
+```
+Bar bar chalale-o cholbe, output CSV file e jay.
+
+**2. Web UI (500 porjonto thik ache)**
+Bulk list tab e paste koro ba `.txt`/`.csv` upload koro, tarpor Download CSV.
+
+**3. API (nijer script theke)**
+```
+curl -X POST http://localhost:3000/api/check/bulk?format=csv \
+  -H "content-type: text/csv" --data-binary @domains.txt -o report.csv
+```
+
+### Boro amount er setting
+
+`.env` e:
+```
+DBC_BULK_MAX=2000           # ek request e koto domain (default 500)
+DBC_BULK_CONCURRENCY=10     # ekshathe koto domain (default 5)
+DBC_QUERY_CONCURRENCY=12    # per domain koto DNS query ekshathe
+DBC_CACHE_TTL_MS=3600000    # cache 1 ghonta (default 15 min)
+```
+
+> **Shabdhan:** concurrency beshi barale tomar IP blocklist gulo temporarily block
+> korte pare (rate limit). 10 er beshi na barano-i valo. 10,000+ domain hole
+> CLI diye **chunk kore** chalao (jemon 1000 kore 10 bar), majhe kichukhon birti dao.
+
+### Duration hisheb
+
+| Domain | Somoy (concurrency 10) |
+|---|---|
+| 100 | ~50 second |
+| 500 | ~4 minute |
+| 2,000 | ~17 minute |
+| 10,000 | ~83 minute (chunk kore koro) |
+
+---
+
 ## 4. Database setup (OPTIONAL. History/monitoring lagle)
 
 DB chara-o blacklist check, analyze, bulk. Sob kaj kore. DB sudhu **check history save**

@@ -130,6 +130,14 @@
     tr.st-skipped { opacity: .72; }
     tr.st-listed { background: rgba(248,81,73,.05); }
     table.bl td a { color: var(--accent); margin-left: 6px; }
+    table.bl td.act, table.bl th.act { text-align: right; white-space: nowrap; }
+    a.delist {
+      display: inline-block; padding: 5px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600;
+      color: #fff; background: linear-gradient(180deg, var(--accent), #3f7ff0); text-decoration: none;
+      box-shadow: 0 1px 6px rgba(63,127,240,.3); transition: transform .12s, box-shadow .12s;
+    }
+    a.delist:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(63,127,240,.45); }
+    table.bl td.bl-name { font-weight: 600; }
     .pill { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted);
       border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-left: 4px; }
     .mini { color: var(--muted); font-size: 12px; }
@@ -218,6 +226,7 @@
     <div class="tabs">
       <div class="tab active" data-tab="single">Analyze</div>
       <div class="tab" data-tab="bulk">Bulk list</div>
+      <div class="tab" data-tab="auth">Email auth</div>
       <div class="tab" data-tab="api">API</div>
     </div>
 
@@ -247,6 +256,11 @@ mail.contoso.org"></textarea>
         <span class="hint" id="bulk-count">0 domains</span>
       </div>
       <div id="bulk-out"></div>
+    </section>
+
+    <!-- EMAIL AUTH -->
+    <section id="auth-pane" class="hidden">
+      <div id="auth-out"><div class="card empty">Run a check on the Analyze tab first. The SPF, DKIM, DMARC, MX and PTR results for that domain appear here.</div></div>
     </section>
 
     <!-- API -->
@@ -309,7 +323,7 @@ mail.contoso.org"></textarea>
     const scoreColor = (s) => (s >= 85 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)');
 
     // ---- tabs ----
-    const PANES = { single: 'single-pane', bulk: 'bulk-pane', api: 'api-pane' };
+    const PANES = { single: 'single-pane', bulk: 'bulk-pane', auth: 'auth-pane', api: 'api-pane' };
     let apiRendered = false;
     document.querySelectorAll('.tab').forEach((t) => {
       t.addEventListener('click', () => {
@@ -597,12 +611,17 @@ mail.contoso.org"></textarea>
       h += '</div></div>';
 
       // --- auth cards ---
-      if (d.auth) h += renderAuth(d.auth);
+      // Authentication health lives on its own tab now.
+      document.getElementById('auth-out').innerHTML = d.auth
+        ? '<div class="card"><div class="meta" style="margin:0 0 4px">Authentication health for <b>' + esc(d.domain)
+          + '</b>. Auth score <b>' + d.auth.score + '/100</b></div>' + renderAuth(d.auth)
+          + renderAuthRecs(d.recommendations) + '</div>'
+        : '<div class="card empty">No authentication data for this input.</div>';
 
       // --- recommendations ---
-      if (d.recommendations && d.recommendations.length) {
-        h += '<h3>Recommendations <span class="mini">(' + d.recommendations.length + ')</span></h3>';
-        for (const r of d.recommendations) {
+      if (d.recommendations && d.recommendations.some((x) => x.area === 'blacklist')) {
+        h += '<h3>Recommendations <span class="mini">(' + d.recommendations.filter((x) => x.area === 'blacklist').length + ')</span></h3>';
+        for (const r of d.recommendations.filter((x) => x.area === 'blacklist')) {
           h += '<div class="rec ' + ({critical:'crit',high:'high',medium:'med',low:'low'}[r.severity]||'med') + '">'
             + '<div class="rec-t"><span class="sev-dot ' + r.severity + '"></span>' + esc(r.title)
             + ' <span class="sev">' + esc(r.severity) + '</span></div>'
@@ -623,7 +642,6 @@ mail.contoso.org"></textarea>
       h += '<div class="table-scroll" id="bl-table">' + renderBlTable(bl) + '</div>';
 
       // --- signals (ESP-sourced, not connected) ---
-      h += renderSignals(d.signals);
 
       sOut.innerHTML = h;
       wireAnalyze();
@@ -670,24 +688,42 @@ mail.contoso.org"></textarea>
     function renderBlTable(bl) {
       let rows = bl.table;
       if (blCategory !== 'all') rows = rows.filter((r) => r.category === blCategory);
-      if (blStatus !== 'all') rows = rows.filter((r) => r.state === blStatus);
-      let h = '<table class="bl"><thead><tr><th>Status</th><th>Blacklist</th><th>Reason</th>'
-        + '<th class="num">TTL</th><th class="num">Resp</th></tr></thead><tbody>';
-      if (!rows.length) h += '<tr><td colspan="5" class="empty" style="padding:14px">No lists in this view.</td></tr>';
+      if (blStatus === 'all') rows = rows.filter((r) => r.state !== 'skipped'); // skipped live behind their own filter
+      else rows = rows.filter((r) => r.state === blStatus);
+
+      let h = '<table class="bl"><thead><tr><th>Status</th><th>Blocklist</th><th>Detail</th>'
+        + '<th class="act">Action</th></tr></thead><tbody>';
+      if (!rows.length) h += '<tr><td colspan="4" class="empty" style="padding:14px">Nothing to show in this view.</td></tr>';
       for (const r of rows) {
-        const reason = r.state === 'listed'
-          ? esc(r.reason) + (r.delist ? ' <a href="' + esc(r.delist) + '" target="_blank" rel="noopener">Delist →</a>' : '')
-          : ((r.state === 'timeout' || r.state === 'skipped') ? '<span class="mini">' + esc(r.reason) + '</span>' : '');
-        const tag = r.catalogStatus && r.catalogStatus !== 'live'
-          ? ' <span class="pill">' + esc(r.catalogStatus) + '</span>' : '';
+        const detail = r.state === 'listed'
+          ? esc(r.reason)
+          : (r.state === 'ok' ? '' : '<span class="mini">' + esc(r.reason) + '</span>');
+        const action = (r.state === 'listed' && r.delist)
+          ? '<a class="delist" href="' + esc(r.delist) + '" target="_blank" rel="noopener">Request removal</a>'
+          : '';
         h += '<tr class="' + STATE_CLS[r.state] + '">'
           + '<td class="st"><span class="dot">' + STATE_ICON[r.state] + '</span>' + STATE_LABEL[r.state] + '</td>'
-          + '<td>' + esc(r.name) + ' <span class="pill cat-pill">' + esc(r.category) + '</span>' + tag + '</td>'
-          + '<td>' + reason + '</td>'
-          + '<td class="num">' + (r.ttl ?? '') + '</td>'
-          + '<td class="num">' + (r.responseMs ?? '') + '</td></tr>';
+          + '<td class="bl-name">' + esc(r.name) + '</td>'
+          + '<td>' + detail + '</td>'
+          + '<td class="act">' + action + '</td></tr>';
       }
       h += '</tbody></table>';
+      return h;
+    }
+
+    // Only the authentication-related advice belongs on the Email auth tab.
+    function renderAuthRecs(recs) {
+      const list = (recs || []).filter((r) => ['spf', 'dkim', 'dmarc', 'ptr'].includes(r.area));
+      if (!list.length) return '';
+      let h = '<h3>What to fix</h3>';
+      for (const r of list) {
+        h += '<div class="rec ' + ({ critical: 'crit', high: 'high', medium: 'med', low: 'low' }[r.severity] || 'med') + '">'
+          + '<div class="rec-t"><span class="sev-dot ' + r.severity + '"></span>' + esc(r.title)
+          + ' <span class="sev">' + esc(r.severity) + '</span></div>'
+          + '<div class="n">' + esc(r.detail)
+          + (r.action ? ' <a href="' + esc(r.action.url) + '" target="_blank" rel="noopener">' + esc(r.action.label) + '</a>' : '')
+          + '</div></div>';
+      }
       return h;
     }
 
