@@ -12,6 +12,7 @@ import { analyzeDomain } from './lib/analyze.js';
 import { checkAuth } from './lib/auth.js';
 import { createApiKey, validateApiKey } from './lib/apikeys.js';
 import { getCalibration, isTrusted, summarize } from './lib/calibrate.js';
+import { removalGuide, KIND_LABEL } from './lib/removal.js';
 import { buildResolver } from './lib/resolve.js';
 import { ALL_ZONES, CATEGORIES } from './lib/zones.js';
 import { dbEnabled } from './db/pool.js';
@@ -189,6 +190,19 @@ export function buildServer() {
       trusted: zones.filter((z) => z.trusted).length,
       summary: summarize(cal),
       zones,
+    };
+  });
+
+  // Step by step removal guidance for one listing.
+  app.get('/api/removal', async (req, reply) => {
+    const zone = (req.query.zone || '').toString().trim();
+    const z = ALL_ZONES.find((x) => x.zone === zone);
+    if (!z) return reply.code(404).send({ ok: false, error: 'unknown blocklist' });
+    const subject = (req.query.subject || '').toString().trim();
+    return {
+      ok: true,
+      kindLabels: KIND_LABEL,
+      guide: removalGuide({ zone: z.zone, name: z.name, type: z.type, delist: z.delist, subject }),
     };
   });
 

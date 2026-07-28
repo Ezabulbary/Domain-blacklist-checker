@@ -210,6 +210,27 @@
     .resp pre { margin-top: 8px; }
     .api-note ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.75; }
     .api-note code, .ep-desc code { background: rgba(255,255,255,.07); padding: 1px 6px; border-radius: 4px; color: #cdd8ea; }
+    .modal { position: fixed; inset: 0; background: rgba(4,6,10,.72); display: grid; place-items: center;
+      padding: 24px; z-index: 50; backdrop-filter: blur(3px); }
+    .modal.hidden { display: none; }  /* must beat .modal's display, which is declared later than .hidden */
+    .modal-card { background: linear-gradient(180deg, var(--card2), var(--card)); border: 1px solid var(--line2);
+      border-radius: 16px; padding: 26px 28px; max-width: 640px; width: 100%; max-height: 84vh; overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,.55); position: relative; }
+    .modal-x { position: absolute; top: 16px; right: 16px; padding: 6px 14px; font-size: 12.5px;
+      background: var(--card); border: 1px solid var(--line2); color: var(--muted); box-shadow: none; }
+    .modal-x:hover:not(:disabled) { color: var(--fg); transform: none; box-shadow: none; }
+    .modal-t { font-size: 20px; font-weight: 800; margin: 0 6px 8px 0; letter-spacing: -.01em; }
+    .modal-sub { color: var(--muted); font-size: 13.5px; margin-bottom: 12px; }
+    .modal-p { font-size: 14px; margin: 0 0 4px; }
+    .kind { display: inline-block; margin-left: 6px; padding: 2px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .kind-auto { background: rgba(53,196,106,.15); color: var(--clean); }
+    .kind-self { background: rgba(91,157,255,.15); color: var(--accent); }
+    .kind-paid, .kind-isp { background: rgba(224,169,44,.15); color: var(--listed); }
+    ol.steps { margin: 6px 0 4px; padding-left: 20px; font-size: 14px; line-height: 1.65; }
+    ol.steps li { margin-bottom: 8px; }
+    ol.muted-steps { color: var(--muted); font-size: 13.5px; }
+    a.delist.big { display: inline-block; margin-top: 14px; padding: 11px 20px; font-size: 14px; }
     footer { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff;
       border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; }
@@ -301,6 +322,13 @@ mail.contoso.org"></textarea>
         </ul>
       </div>
     </section>
+
+    <div id="removal-modal" class="modal hidden">
+      <div class="modal-card">
+        <button class="modal-x" id="removal-close" type="button">Close</button>
+        <div id="removal-body"></div>
+      </div>
+    </div>
 
     <footer>
       A blocklist is only counted when it answers this server reliably. Timeouts are never
@@ -632,13 +660,17 @@ mail.contoso.org"></textarea>
       // --- blacklist section ---
       h += '<div class="tbl-head"><h3 style="margin:0">Blocklists <span class="mini">'
         + bl.zonesChecked + ' total, ' + bl.listedCount + ' listed</span></h3></div>';
-      // status filter (view one state at a time) + category filter
-      h += '<div class="cat-tabs" id="status-tabs">' + STATUS_FILTERS.map((s) => {
-        const n = s.key === 'all' ? '' : ' ' + (s.key === 'listed' ? bl.listedCount : s.key === 'timeout' ? bl.timeoutCount : s.key === 'ok' ? bl.okCount : bl.skippedCount);
-        return '<span class="cat st-filter' + (blStatus === s.key ? ' active' : '') + '" data-status="' + s.key + '">' + esc(s.label) + n + '</span>';
-      }).join('') + '</div>';
-      h += '<div class="cat-tabs" id="cat-tabs">' + CATS.map((c) =>
-        '<span class="cat' + (blCategory === c.key ? ' active' : '') + '" data-cat="' + c.key + '">' + esc(c.label) + '</span>').join('') + '</div>';
+      // One row of filters, and a state only appears when it has something in it.
+      const FILTERS = [
+        { key: 'all', label: 'All', n: bl.zonesChecked },
+        { key: 'listed', label: 'Listed', n: bl.listedCount },
+        { key: 'ok', label: 'Clean', n: bl.okCount },
+        { key: 'timeout', label: 'Timeout', n: bl.timeoutCount },
+        { key: 'skipped', label: 'Not checked', n: bl.skippedCount },
+      ].filter((f) => f.key === 'all' || f.n > 0);
+      h += '<div class="cat-tabs" id="status-tabs">' + FILTERS.map((f) =>
+        '<span class="cat st-filter' + (blStatus === f.key ? ' active' : '') + '" data-status="' + f.key + '">'
+        + esc(f.label) + ' ' + f.n + '</span>').join('') + '</div>';
       h += '<div class="table-scroll" id="bl-table">' + renderBlTable(bl) + '</div>';
 
       // --- signals (ESP-sourced, not connected) ---
@@ -698,8 +730,8 @@ mail.contoso.org"></textarea>
         const detail = r.state === 'listed'
           ? esc(r.reason)
           : (r.state === 'ok' ? '' : '<span class="mini">' + esc(r.reason) + '</span>');
-        const action = (r.state === 'listed' && r.delist)
-          ? '<a class="delist" href="' + esc(r.delist) + '" target="_blank" rel="noopener">Request removal</a>'
+        const action = r.state === 'listed'
+          ? '<button class="delist" data-zone="' + esc(r.zone) + '" data-subject="' + esc(r.subjects.join(', ')) + '">How to remove</button>'
           : '';
         h += '<tr class="' + STATE_CLS[r.state] + '">'
           + '<td class="st"><span class="dot">' + STATE_ICON[r.state] + '</span>' + STATE_LABEL[r.state] + '</td>'
@@ -733,11 +765,46 @@ mail.contoso.org"></textarea>
         document.querySelectorAll('#status-tabs .st-filter').forEach((x) => x.classList.toggle('active', x === el));
         document.getElementById('bl-table').innerHTML = renderBlTable(report.blacklist);
       }));
+      document.querySelectorAll('#bl-table .delist').forEach((btn) => btn.addEventListener('click', () => {
+        openRemoval(btn.dataset.zone, btn.dataset.subject);
+      }));
       document.querySelectorAll('#cat-tabs .cat').forEach((el) => el.addEventListener('click', () => {
         blCategory = el.dataset.cat;
         document.querySelectorAll('#cat-tabs .cat').forEach((x) => x.classList.toggle('active', x === el));
         document.getElementById('bl-table').innerHTML = renderBlTable(report.blacklist);
       }));
+    }
+
+    // ================= REMOVAL GUIDE =================
+    const modal = document.getElementById('removal-modal');
+    document.getElementById('removal-close').addEventListener('click', () => modal.classList.add('hidden'));
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') modal.classList.add('hidden'); });
+
+    async function openRemoval(zone, subject) {
+      const body = document.getElementById('removal-body');
+      body.innerHTML = '<span class="spinner"></span> Loading removal steps.';
+      modal.classList.remove('hidden');
+      try {
+        const res = await fetch('/api/removal?zone=' + encodeURIComponent(zone) + '&subject=' + encodeURIComponent(subject || ''));
+        const data = await res.json();
+        if (!data.ok) { body.innerHTML = '<p class="err">' + esc(data.error) + '</p>'; return; }
+        const g = data.guide;
+        let h = '<h2 class="modal-t">Get removed from ' + esc(g.name) + '</h2>';
+        h += '<div class="modal-sub"><b>' + esc(g.subject || '') + '</b> is listed. '
+          + '<span class="kind kind-' + esc(g.kind) + '">' + esc(data.kindLabels[g.kind] || '') + '</span></div>';
+        h += '<p class="modal-p">' + esc(g.means) + '</p>';
+        h += '<h3>Steps for this list</h3><ol class="steps">'
+          + g.steps.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ol>';
+        h += '<h3>Do this first, or you will be listed again</h3><ol class="steps muted-steps">'
+          + g.common.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ol>';
+        if (g.url) {
+          h += '<a class="delist big" href="' + esc(g.url) + '" target="_blank" rel="noopener">Open the ' + esc(g.name) + ' removal page</a>';
+        }
+        body.innerHTML = h;
+      } catch (err) {
+        body.innerHTML = '<p class="err">Could not load the guide: ' + esc(err.message) + '</p>';
+      }
     }
 
     // ================= BULK =================
