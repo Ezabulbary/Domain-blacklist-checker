@@ -305,11 +305,15 @@ export function buildServer() {
       return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     }
 
+    // ?auth=1 also pulls SPF, DKIM, DMARC, MX and PTR for every domain. That
+    // path cannot use the blocklist-only cache, so it runs the full audit.
+    const withAuth = req.query.auth === '1' || (req.body && req.body.auth === true);
     const { results, summary, skipped } = await checkMany(inputs, {
       resolver,
+      withAuth,
       concurrency: BULK_CONCURRENCY,
       max: BULK_MAX,
-      checkFn: checkCached,
+      checkFn: withAuth ? undefined : checkCached,
     });
 
     if ((req.query.format || '').toString().toLowerCase() === 'csv') {

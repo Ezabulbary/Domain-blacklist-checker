@@ -109,6 +109,9 @@
     tr.warn-row td.score-cell { color: var(--listed); }
     tr.ok-row td.score-cell { color: var(--clean); }
     .table-scroll { overflow-x: auto; }
+    td.a-ok { color: var(--clean); font-weight: 600; }
+    td.a-warn { color: var(--listed); font-weight: 600; }
+    td.a-bad { color: var(--bad); font-weight: 600; }
     /* blacklist results table */
     .tbl-head { display: flex; align-items: center; justify-content: space-between; margin: 22px 0 8px; }
     .toggle { font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
@@ -271,6 +274,7 @@ mail.contoso.org"></textarea>
       </form>
       <div class="bulk-controls">
         <button id="bulk-go" type="button">Check all</button>
+        <label class="toggle"><input type="checkbox" id="bulk-auth" checked> Also check SPF, DKIM and DMARC</label>
         <label class="file">Upload .txt/.csv<input type="file" id="bulk-file" accept=".txt,.csv,.lst,text/plain,text/csv" /></label>
         <button id="bulk-csv" class="ghost hidden" type="button">Download CSV</button>
         <span class="spacer"></span>
@@ -842,7 +846,7 @@ mail.contoso.org"></textarea>
         const res = await fetch('/api/check/bulk', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ domains }),
+          body: JSON.stringify({ domains, auth: document.getElementById('bulk-auth').checked }),
         });
         const data = await res.json();
         if (!data.ok) { bOut.innerHTML = '<div class="card err">✗ ' + esc(data.error) + '</div>'; return; }
@@ -902,28 +906,39 @@ mail.contoso.org"></textarea>
     }
 
     function renderTable() {
-      const arrow = (k) => (sortKey === k ? (sortDir === 1 ? ' ▲' : ' ▼') : '');
+      const rows = sortedResults();
+      const withAuth = rows.some((r) => r.auth);
+      const arrow = (k) => (sortKey === k ? (sortDir === 1 ? ' \u25B2' : ' \u25BC') : '');
       let h = '<table><thead><tr>'
         + '<th data-k="domain">Domain' + arrow('domain') + '</th>'
-        + '<th data-k="verdict">Verdict' + arrow('verdict') + '</th>'
-        + '<th data-k="score">Score' + arrow('score') + '</th>'
-        + '<th>Listings</th></tr></thead><tbody>';
-      for (const r of sortedResults()) {
+        + '<th data-k="verdict">Blocklists' + arrow('verdict') + '</th>'
+        + '<th data-k="score">Score' + arrow('score') + '</th>';
+      if (withAuth) h += '<th>SPF</th><th>DKIM</th><th>DMARC</th>';
+      h += '<th>Listed on</th></tr></thead><tbody>';
+
+      const authCell = (v) => {
+        const cls = v === 'pass' ? 'a-ok' : (v === 'missing' || v === 'none' ? 'a-bad' : 'a-warn');
+        return '<td class="' + cls + '">' + esc(v || '') + '</td>';
+      };
+
+      for (const r of rows) {
         if (!r.ok) {
           h += '<tr><td>' + esc(r.input) + '</td><td><span class="badge b-invalid">invalid</span></td>'
-            + '<td class="score-cell">n/a</td><td class="mini">' + esc(r.error) + '</td></tr>';
+            + '<td class="score-cell">n/a</td>' + (withAuth ? '<td></td><td></td><td></td>' : '')
+            + '<td class="mini">' + esc(r.error) + '</td></tr>';
           continue;
         }
         const rowCls = r.verdict === 'clean' ? 'ok-row' : (r.verdict === 'blacklisted' ? 'bad-row' : (r.verdict === 'listed' ? 'warn-row' : ''));
-        const listings = r.listings.length
-          ? r.listings.map((l) => esc(l.zone)).join(', ')
-          : '<span class="mini">None</span>';
+        const listings = r.listings.length ? r.listings.map((l) => esc(l.zone)).join(', ') : '<span class="mini">None</span>';
         h += '<tr class="' + rowCls + '"><td>' + esc(r.domain)
           + (r.dns.a.length ? ' <span class="mini">' + esc(r.dns.a[0]) + (r.dns.a.length > 1 ? ' +' + (r.dns.a.length - 1) : '') + '</span>' : '')
           + '</td>'
           + '<td><span class="badge b-' + r.verdict + '">' + esc(r.verdict) + '</span></td>'
-          + '<td class="score-cell">' + r.score + '</td>'
-          + '<td>' + listings + '</td></tr>';
+          + '<td class="score-cell">' + r.score + '</td>';
+        if (withAuth) {
+          h += r.auth ? (authCell(r.auth.spf) + authCell(r.auth.dkim) + authCell(r.auth.dmarc)) : '<td></td><td></td><td></td>';
+        }
+        h += '<td>' + listings + '</td></tr>';
       }
       h += '</tbody></table>';
       return h;
@@ -943,7 +958,9 @@ mail.contoso.org"></textarea>
     }
 
     function toCsv(results) {
+      const withAuth = results.some((r) => r.auth);
       const head = ['input', 'domain', 'verdict', 'score', 'listed', 'clean', 'unknown', 'a_records', 'listings', 'error'];
+      if (withAuth) head.splice(2, 0, 'risk_score', 'auth_score', 'spf', 'dkim', 'dmarc', 'dmarc_policy', 'mx', 'ptr');
       const cell = (v) => {
         let s = String(v ?? '');
         if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // block spreadsheet formula injection
@@ -951,10 +968,14 @@ mail.contoso.org"></textarea>
       };
       const lines = [head.join(',')];
       for (const r of results) {
+        const a = r.auth || {};
+        const authCells = withAuth
+          ? [r.riskScore ?? '', a.score ?? '', a.spf ?? '', a.dkim ?? '', a.dmarc ?? '', a.dmarcPolicy ?? '', a.mx ?? '', a.ptr ?? '']
+          : [];
         const row = r.ok
-          ? [r.input, r.domain, r.verdict, r.score, r.counts.listed, r.counts.clean, r.counts.unknown,
+          ? [r.input, r.domain, ...authCells, r.verdict, r.score, r.counts.listed, r.counts.clean, r.counts.unknown,
              r.dns.a.join(' '), r.listings.map((l) => l.subject + '@' + l.zone).join(' '), '']
-          : [r.input, '', 'invalid', '', '', '', '', '', '', r.error];
+          : [r.input, '', ...authCells.map(() => ''), 'invalid', '', '', '', '', '', '', r.error];
         lines.push(row.map(cell).join(','));
       }
       return lines.join('\n');

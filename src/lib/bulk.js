@@ -1,4 +1,5 @@
 import { checkDomain } from './check.js';
+import { analyzeDomain } from './analyze.js';
 import { buildResolver } from './resolve.js';
 
 /**
@@ -23,7 +24,9 @@ export async function checkMany(inputs, opts = {}) {
   const concurrency = Math.max(1, Math.min(opts.concurrency ?? 5, 16));
   const max = opts.max ?? 500;
   const resolver = opts.resolver || buildResolver();
-  const checkFn = opts.checkFn || checkDomain;
+  // withAuth also pulls SPF, DKIM, DMARC, MX and PTR for every domain, which is
+  // what you want when auditing a client list rather than just hunting listings.
+  const checkFn = opts.checkFn || (opts.withAuth ? auditDomain : checkDomain);
 
   // Clean + de-dupe while preserving first-seen order.
   const seen = new Set();
@@ -76,6 +79,40 @@ export async function checkMany(inputs, opts = {}) {
   };
 }
 
+/**
+ * A full audit of one domain: blocklists plus authentication. Returned in the
+ * same shape as checkDomain() so everything downstream keeps working, with an
+ * extra `auth` block.
+ */
+async function auditDomain(input, opts = {}) {
+  const r = await analyzeDomain(input, opts);
+  if (!r.ok) return r;
+  const bl = r.blacklist;
+  return {
+    ok: true,
+    input: r.input,
+    domain: r.domain,
+    verdict: bl.verdict,
+    score: bl.score,
+    riskScore: r.riskScore,
+    standing: r.standing,
+    counts: { listed: bl.listedCount, clean: bl.okCount, unknown: bl.timeoutCount, skipped: bl.skippedCount },
+    dns: r.dns,
+    listings: bl.listings,
+    auth: r.auth && {
+      score: r.auth.score,
+      spf: r.auth.spf.present ? (r.auth.spf.status === 'pass' ? 'pass' : 'weak') : 'missing',
+      spfPolicy: r.auth.spf.policy || '',
+      dkim: r.auth.dkim.present ? 'pass' : 'none',
+      dkimSelectors: (r.auth.dkim.selectors || []).map((x) => x.selector).join(' '),
+      dmarc: r.auth.dmarc.present ? (r.auth.dmarc.policy === 'reject' ? 'pass' : 'weak') : 'missing',
+      dmarcPolicy: r.auth.dmarc.policy || '',
+      mx: (r.auth.mx && r.auth.mx.records.length) || 0,
+      ptr: r.auth.ptr ? r.auth.ptr.status : 'n/a',
+    },
+  };
+}
+
 function summarize(results, tookMs) {
   const s = { total: results.length, clean: 0, listed: 0, blacklisted: 0, unknown: 0, invalid: 0, tookMs };
   for (const r of results) {
@@ -89,13 +126,23 @@ function summarize(results, tookMs) {
  * Flatten bulk results into CSV rows for export/download. One line per domain.
  */
 export function resultsToCsv(results) {
+  const withAuth = results.some((r) => r && r.auth);
   const head = ['input', 'domain', 'verdict', 'score', 'listed', 'clean', 'unknown', 'a_records', 'listings', 'error'];
+  if (withAuth) {
+    head.splice(2, 0, 'risk_score', 'auth_score', 'spf', 'spf_policy', 'dkim', 'dkim_selectors', 'dmarc', 'dmarc_policy', 'mx', 'ptr');
+  }
   const rows = [head.join(',')];
   for (const r of results) {
+    const a = r.auth || {};
+    const authCells = withAuth
+      ? [r.riskScore ?? '', a.score ?? '', a.spf ?? '', a.spfPolicy ?? '', a.dkim ?? '', a.dkimSelectors ?? '',
+         a.dmarc ?? '', a.dmarcPolicy ?? '', a.mx ?? '', a.ptr ?? '']
+      : [];
     const cells = r.ok
       ? [
           r.input,
           r.domain,
+          ...authCells,
           r.verdict,
           r.score,
           r.counts.listed,
@@ -105,7 +152,7 @@ export function resultsToCsv(results) {
           r.listings.map((l) => `${l.subject}@${l.zone}`).join(' '),
           '',
         ]
-      : [r.input, '', 'invalid', '', '', '', '', '', '', r.error];
+      : [r.input, '', ...(withAuth ? authCells.map(() => '') : []), 'invalid', '', '', '', '', '', '', r.error];
     rows.push(cells.map(csvCell).join(','));
   }
   return rows.join('\n');

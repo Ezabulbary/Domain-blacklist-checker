@@ -113,6 +113,29 @@ Mane: **500 domain = 4 theke 5 minute**. 5000 domain = prai 40 minute.
 Repeat korle onek fast: server e cache thake, tai ekই list abar dile
 **3.7 sec -> 0 sec**.
 
+### Client list audit: SPF + DKIM + DMARC + blacklist ekshathe
+
+Bulk e **"Also check SPF, DKIM and DMARC"** checkbox ache (default on)। Tokhon
+protita domain er jonno pabe: SPF, DKIM, DMARC, MX, PTR, auth score, risk score,
+ar blacklist status. Ek CSV te sob client.
+
+```
+npm run check:bulk -- --auth --csv clients.txt > audit.csv
+```
+
+CSV column: `input, domain, risk_score, auth_score, spf, spf_policy, dkim,
+dkim_selectors, dmarc, dmarc_policy, mx, ptr, verdict, score, listed, clean,
+unknown, a_records, listings`
+
+API diye:
+```
+curl -X POST "http://localhost:3000/api/check/bulk?auth=1&format=csv" \
+  -H "content-type: text/csv" --data-binary @clients.txt -o audit.csv
+```
+
+> Auth check korle protita domain e ~25 ta extra DNS query jay, tai prai
+> **duigun somoy** lage. Sudhu blacklist lagle checkbox ta off koro.
+
 ### Boro list er jonno kon poddhoti
 
 **1. CLI (5000+ domain er jonno best)** . HTTP timeout er somossa nai, progress dekhay:

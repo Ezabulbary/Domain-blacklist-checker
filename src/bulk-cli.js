@@ -11,7 +11,8 @@ import { checkMany, resultsToCsv } from './lib/bulk.js';
 
 const argv = process.argv.slice(2);
 const asCsv = argv.includes('--csv');
-const rest = argv.filter((a) => a !== '--csv');
+const withAuth = argv.includes('--auth');
+const rest = argv.filter((a) => a !== '--csv' && a !== '--auth');
 
 function parse(text) {
   return text
@@ -35,12 +36,14 @@ if (rest.length === 1 && !rest[0].includes('.')) {
 }
 
 if (inputs.length === 0) {
-  console.error('usage: npm run check:bulk -- <file|domains...>   (or pipe a list via stdin)');
+  console.error('usage: npm run check:bulk -- [--auth] [--csv] <file|domains...>   (or pipe a list via stdin)');
+  console.error('  --auth  also check SPF, DKIM, DMARC, MX and PTR for every domain');
   process.exit(2);
 }
 
 const startedAt = Date.now();
 const { results, summary, skipped } = await checkMany(inputs, {
+  withAuth,
   concurrency: Number(process.env.DBC_BULK_CONCURRENCY ?? 5),
   onProgress: (done, total) => {
     if (!asCsv) process.stderr.write(`\r  checking ${done}/${total}…   `);
@@ -63,7 +66,10 @@ for (const r of results) {
   const b = badge[r.verdict] || '·';
   const listed = r.counts.listed ? `${r.counts.listed} listing(s): ` +
     r.listings.map((l) => l.zone).join(', ') : '';
-  console.log(`  ${b} ${r.domain.padEnd(32)} ${String(r.score).padStart(3)}/100  ${r.verdict.padEnd(12)} ${listed}`);
+  const auth = r.auth
+    ? `SPF:${r.auth.spf.padEnd(7)} DKIM:${r.auth.dkim.padEnd(4)} DMARC:${r.auth.dmarc.padEnd(7)} `
+    : '';
+  console.log(`  ${b} ${r.domain.padEnd(28)} ${String(r.score).padStart(3)}/100 ${auth}${r.verdict.padEnd(10)} ${listed}`);
 }
 
 console.log(
