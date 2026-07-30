@@ -61,7 +61,7 @@ export async function checkSpf(domain, resolver) {
     return { present: true, status, record, qualifier, policy, lookups, tooManyLookups: lookups > 10 };
   } catch (e) {
     if (e.code === 'ENOTFOUND' || e.code === 'ENODATA') return { present: false, status: 'missing', record: null };
-    return { present: false, status: 'unknown', error: e.code };
+    return { present: false, status: 'unknown', record: null, error: e.code };
   }
 }
 
@@ -92,7 +92,7 @@ export async function checkDmarc(domain, resolver) {
     };
   } catch (e) {
     if (e.code === 'ENOTFOUND' || e.code === 'ENODATA') return { present: false, status: 'missing', record: null };
-    return { present: false, status: 'unknown', error: e.code };
+    return { present: false, status: 'unknown', record: null, error: e.code };
   }
 }
 
@@ -119,14 +119,21 @@ export async function checkDkim(domain, selectors, resolver) {
   };
 }
 
-/** MX records, sorted by priority. */
+/**
+ * MX records, sorted by priority.
+ *
+ * `records` is always an array, including on a transient failure. Callers read
+ * `records.length` directly, and a batch of a few hundred domains will always
+ * hit at least one ETIMEOUT/ESERVFAIL, so an absent field there would crash the
+ * whole run.
+ */
 export async function checkMx(domain, resolver) {
   try {
     const mx = (await resolver.resolveMx(domain)).sort((a, b) => a.priority - b.priority);
     return { present: mx.length > 0, status: mx.length ? 'pass' : 'missing', records: mx.map((r) => ({ exchange: r.exchange, priority: r.priority })) };
   } catch (e) {
     if (e.code === 'ENOTFOUND' || e.code === 'ENODATA') return { present: false, status: 'missing', records: [] };
-    return { present: false, status: 'unknown', error: e.code };
+    return { present: false, status: 'unknown', records: [], error: e.code };
   }
 }
 

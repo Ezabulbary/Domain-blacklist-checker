@@ -14,7 +14,11 @@ import { buildResolver } from './resolve.js';
 export async function analyzeDomain(input, opts = {}) {
   const resolver = opts.resolver || buildResolver();
 
-  const bl = await checkDomain(input, { resolver });
+  const bl = await checkDomain(input, {
+    resolver,
+    calibration: opts.calibration,
+    overallTimeoutMs: opts.overallTimeoutMs,
+  });
   if (!bl.ok) return { ok: false, input, error: bl.error };
 
   // Auth only makes sense for a domain (not a bare IP literal).

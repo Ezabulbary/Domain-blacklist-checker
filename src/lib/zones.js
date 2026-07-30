@@ -51,7 +51,14 @@ export const IP_ZONES = [
   { name: 'Anonmails DNSBL', zone: 'spam.dnsbl.anonmails.de', type: 'ip', weight: 5, severity: 'low', status: 'live', note: 'Anonmails spam sources.', delist: 'https://anonmails.de/dnsbl.php' },
   { name: 'FABELSOURCES', zone: 'spamsources.fabel.dk', type: 'ip', weight: 5, severity: 'low', status: 'live', note: 'Fabel spam sources.', delist: 'https://fabel.dk/' },
   { name: 's5h.net', zone: 'all.s5h.net', type: 'ip', weight: 5, severity: 'low', status: 'live', note: 's5h.net aggregate blocklist.', delist: 'https://www.usenix.org.uk/content/rbl.html' },
-  { name: 'SPFBL DNSBL', zone: 'dnsbl.spfbl.net', type: 'ip', weight: 5, severity: 'low', status: 'live', note: 'SPFBL reputation blocklist.', delist: 'https://spfbl.net/en/dnsbl/' },
+  // SPFBL answers two different questions on one zone. 127.0.0.2/.3 are spam
+  // findings; 127.0.0.4 and .5 are policy flags ("no mail service here", NAT,
+  // residential, unreliable abuse contact). Because we test a domain's A
+  // records, which are web servers and not mail servers, .4 fires on a large
+  // share of the internet (anything behind Cloudflare, GitHub, and so on).
+  // Counting those as listings produced false LISTED rows for roughly a third of
+  // ordinary domains. Only the spam codes count. See ACCURACY.md §7.
+  { name: 'SPFBL DNSBL', zone: 'dnsbl.spfbl.net', type: 'ip', weight: 5, severity: 'low', status: 'live', note: 'SPFBL reputation blocklist. Spam codes only; the "no mail service" policy flag is not a listing.', delist: 'https://spfbl.net/en/dnsbl/', listedCodes: ['127.0.0.2', '127.0.0.3'] },
   { name: 'CYMRU BOGONS', zone: 'bogons.cymru.com', type: 'ip', weight: 5, severity: 'low', status: 'live', note: 'Team Cymru Bogons. Unallocated/unroutable space.', delist: 'https://www.team-cymru.com/bogon-reference' },
   { name: 'IMP SPAM', zone: 'spamrbl.imp.ch', type: 'ip', weight: 5, severity: 'low', status: 'live', note: 'IMP Switzerland spam RBL.', delist: 'https://antispam.imp.ch/' },
   { name: 'IMP WORM', zone: 'wormrbl.imp.ch', type: 'ip', weight: 5, severity: 'low', status: 'live', note: 'IMP Switzerland worm RBL.', delist: 'https://antispam.imp.ch/' },
@@ -85,7 +92,7 @@ export const DOMAIN_ZONES = [
   { name: 'Abusix Mail Intelligence Domain Blacklist', zone: 'dblack.mail.abusix.zone', type: 'domain', weight: 15, severity: 'high', status: 'requiresKey', requiresKey: true, note: 'Abusix domain blacklist (API key required).', delist: 'https://lookup.abusix.com/' },
   { name: 'SEM URIRED', zone: 'urired.spameatingmonkey.net', type: 'domain', weight: 12, severity: 'medium', status: 'live', note: 'Spam Eating Monkey SEM-URIRED.', delist: 'https://spameatingmonkey.com/lookup' },
   { name: 'SEM FRESH', zone: 'fresh.spameatingmonkey.net', type: 'domain', weight: 10, severity: 'medium', status: 'live', note: 'Spam Eating Monkey SEM-FRESH. Newly seen domains.', delist: 'https://spameatingmonkey.com/lookup' },
-  { name: 'ZapBL RHSBL', zone: 'rhsbl.zapbl.net', type: 'domain', weight: 5, severity: 'low', status: 'live', note: 'ZapBL right-hand-side (domain) blocklist.', delist: 'https://zapbl.net/' },
+  { name: 'ZapBL RHSBL', zone: 'rhsbl.zapbl.net', type: 'domain', weight: 5, severity: 'low', status: 'live', note: 'ZapBL right-hand-side (domain) blocklist. Aggressive: it lists some large, legitimate domains, so weigh it lightly.', delist: 'https://zapbl.net/' },
   { name: 'NoSolicitado', zone: 'bl.nosolicitado.org', type: 'domain', weight: 5, severity: 'low', status: 'unverified', note: 'NoSolicitado (Argentina) domain blocklist.', delist: 'https://www.nosolicitado.org/' },
   { name: 'Suomispam Reputation', zone: 'reputation-domain.rbl.suomispam.net', type: 'domain', weight: 5, severity: 'low', status: 'unverified', note: 'Suomispam domain reputation.', delist: 'https://suomispam.net/' },
   { name: 'SORBS RHSBL BADCONF', zone: 'badconf.rhsbl.sorbs.net', type: 'domain', weight: 3, severity: 'low', status: 'defunct', note: 'SORBS RHSBL badconf, SORBS shut down in 2024.', delist: 'https://www.sorbs.net/' },
@@ -112,6 +119,15 @@ export const RETURN_CODES = {
     '127.0.1.102': 'abused legit spam',
     '127.0.1.104': 'abused legit phishing',
     '127.0.1.255': 'BLOCKED. Query volume/policy error, treat as unknown',
+  },
+  // Only .2 and .3 are spam findings. .4 and .5 are policy flags about the
+  // address, not about spam, and SPFBL itself says the zone must not be used to
+  // reject mail. They are shown for information on an otherwise clean row.
+  'dnsbl.spfbl.net': {
+    '127.0.0.2': 'confirmed spam source',
+    '127.0.0.3': 'suspected spam, or not RFC 5321 compliant',
+    '127.0.0.4': 'policy flag, not a listing: no mail service found at this address (NAT or residential)',
+    '127.0.0.5': 'policy flag, not a listing: unreliable abuse contact for this IP range',
   },
   'hostkarma.junkemailfilter.com': {
     '127.0.0.1': 'whitelist (good)',

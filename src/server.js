@@ -324,8 +324,12 @@ export function buildServer() {
     if (!(await authOk(req, reply))) return;
 
     // Charge the rate limiter in proportion to the work (each domain fans out
-    // to ~100 DNS queries) so bulk can't be used to amplify load.
-    const cost = 1 + Math.ceil(Math.min(inputs.length, BULK_MAX) / 25);
+    // to ~100 DNS queries) so bulk can't be used to amplify load. The cost is
+    // strictly per-domain with no per-request constant, so a large list sent as
+    // several smaller batches costs exactly what one big batch costs. The UI
+    // sends batches to keep progress visible and survive proxy timeouts, and it
+    // must not be penalized for that.
+    const cost = Math.max(1, Math.ceil(Math.min(inputs.length, BULK_MAX) / 25));
     if (limited(req, cost)) {
       return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     }

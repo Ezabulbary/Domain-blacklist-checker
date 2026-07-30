@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { IP_ZONES, DOMAIN_ZONES, ALL_ZONES, CATEGORIES } from '../src/lib/zones.js';
+import { IP_ZONES, DOMAIN_ZONES, ALL_ZONES, CATEGORIES, RETURN_CODES, isListedAnswer } from '../src/lib/zones.js';
 import { queryZone } from '../src/lib/resolve.js';
 
 test('catalog covers the full mxtoolbox-style set (~68 zones)', () => {
@@ -105,4 +105,29 @@ test('queryZone: requiresKey hit is untrusted (unknown) unless trustKeyed', asyn
   assert.equal(untrusted.error, 'REQUIRES_KEY');
   const trusted = await queryZone('4.3.2.1', meta, fakeResolver(async () => [{ address: '127.0.0.2', ttl: 60 }]), { trustKeyed: true });
   assert.equal(trusted.listed, true);
+});
+
+// --- SPFBL answers two different questions on one zone ---------------------
+//
+// 127.0.0.2/.3 are spam findings. 127.0.0.4 ("no mail service at this address,
+// NAT or residential") and 127.0.0.5 ("unreliable abuse contact") are policy
+// flags. We query a domain's A records, which are web servers, so .4 came back
+// for about a third of ordinary domains (anything behind Cloudflare, GitHub,
+// Netflix) and produced false LISTED rows.
+test('SPFBL policy codes are not treated as listings', () => {
+  const spfbl = ALL_ZONES.find((z) => z.zone === 'dnsbl.spfbl.net');
+  assert.ok(spfbl, 'SPFBL is in the catalog');
+  assert.equal(isListedAnswer(spfbl, ['127.0.0.2']), true, 'confirmed spam is a listing');
+  assert.equal(isListedAnswer(spfbl, ['127.0.0.3']), true, 'suspected spam is a listing');
+  assert.equal(isListedAnswer(spfbl, ['127.0.0.4']), false, 'no-mail-service flag is not a listing');
+  assert.equal(isListedAnswer(spfbl, ['127.0.0.5']), false, 'abuse-contact flag is not a listing');
+});
+
+test('SPFBL policy codes still get an explanation on the row', () => {
+  const codes = RETURN_CODES['dnsbl.spfbl.net'];
+  assert.ok(codes, 'SPFBL return codes are documented');
+  for (const c of ['127.0.0.2', '127.0.0.3', '127.0.0.4', '127.0.0.5']) {
+    assert.ok(codes[c], `${c} has a documented meaning`);
+  }
+  assert.match(codes['127.0.0.4'], /not a listing/);
 });

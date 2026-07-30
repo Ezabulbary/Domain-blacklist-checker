@@ -79,26 +79,54 @@ npm run check:bulk domains.txt    # file theke bulk
         |
    2. dedupe     ekই domain duibar thakle ekbar-i check hoy
         |
-   3. cap        DBC_BULK_MAX (default 500) porjonto neya hoy
+   3. batch      UI list ta 40 ta kore batch e pathay (niche dekho keno)
         |
-   4. pool       ekshathe DBC_BULK_CONCURRENCY ta domain (default 5).
+   4. cap        prottek request e DBC_BULK_MAX (default 500) porjonto
+        |
+   5. pool       ekshathe DBC_BULK_CONCURRENCY ta domain (default 5).
                  Ekta ses hole porerta dhuke. Sob ekshathe chare na.
         |
-   5. har domain er jonno puro check:
+   6. har domain er jonno puro check:
         normalize -> DNS resolve (A/AAAA/MX)
                   -> trusted blocklist gulo query (nijeo ekta pool, 12 at a time)
                   -> timeout hole retry
                   -> ek blocklist = ek row
                   -> weighted score
         |
-   6. cache      result 15 min cache e thake. Ekই domain abar ele DNS query hoy na
+   7. cache      result 15 min cache e thake. Ekই domain abar ele DNS query hoy na
         |
-   7. output     summary + per-domain result + CSV
+   8. output     summary + per-domain result + CSV
 ```
 
 **Keno pool, keno ekshathe sob na?** Ekta domain-i 36+ ta DNS query kore. 500 ta
 domain ekshathe chere dile 18,000 query ek shathe jabe, resolver bose jabe ar
 blocklist gulo tomar IP block kore debe. Pool ei jonno.
+
+### Keno 40 ta kore batch e pathay (boro list er jonno joruri)
+
+479 ta domain **ek request e** pathale seta 4 theke 5 minute dhore ekta HTTP
+request hoye thakto. Tin ta somossa hoto:
+
+1. **Kono progress dekha jeto na.** Sudhu spinner ghurto, 5 minute.
+2. **Puro run ta hariye jete parto.** Majhe nginx / Cloudflare / laptop sleep
+   connection kete dile 470 ta domain er kaj **puro nosto**. Nginx er default
+   `proxy_read_timeout` 60 second, Cloudflare 100 second.
+3. **Ekta domain nosto hole sob nosto hoto.** (Ei bug ta asol-i chilo, niche
+   dekho.)
+
+Ekhon UI 40 ta kore pathay, tai:
+- **live progress**: "200 of 479 checked, about 2m 10s left", ar result table
+  batch-e-batch bhore othe. Sesh porjonto opekkha korte hoy na.
+- **Stop button**: majhe thamiye dile jotoটুku hoyeche seta thake, CSV-o namano jay.
+- **Ekta batch fail korle** shudhu oi 40 tar row e error boshe, baki sob thake.
+
+Rate limit e ekta jinis khyal kora hoyeche: server bulk er cost **domain hishebe**
+ney (`ceil(count/25)`), per-request kono extra charge nai. Tai 479 ta ek request e
+pathao ba 12 ta batch e, **cost eki**. Batch korar jonno tomake extra dam dite hoy na.
+
+UI te ek shathe **2000** domain porjonto neya jay. Tar beshi hole boki gulo bad jay
+ar seta bole dey. API te direct request pathale limit prottek request e
+`DBC_BULK_MAX` (default 500)।
 
 ### Koto tara tari (mepe dekha)
 
@@ -108,7 +136,12 @@ blocklist gulo tomar IP block kore debe. Pool ei jonno.
 | 10 | ~120 domain / minute |
 | 20 | ~140 domain / minute |
 
-Mane: **500 domain = 4 theke 5 minute**. 5000 domain = prai 40 minute.
+Mane: **500 domain = 4 theke 5 minute**. 2000 domain = prai 16 theke 18 minute.
+
+Auth (SPF/DKIM/DMARC) on korle protita domain e ~24 ta extra DNS query jay, tai
+slow hoy. **Mepe dekha: 479 domain + auth = 477 second, mane prai 8 minute**
+(40 ta kore 12 ta batch, prottek batch ~40 second)। UI progress bar e baki
+kototuku somoy lagbe seta dekhabe.
 
 Repeat korle onek fast: server e cache thake, tai ekই list abar dile
 **3.7 sec -> 0 sec**.
@@ -135,6 +168,13 @@ curl -X POST "http://localhost:3000/api/check/bulk?auth=1&format=csv" \
 
 > Auth check korle protita domain e ~25 ta extra DNS query jay, tai prai
 > **duigun somoy** lage. Sudhu blacklist lagle checkbox ta off koro.
+
+> **API theke boro list pathale 40 theke 50 ta kore batch koro.** 479 ta domain ek
+> curl/fetch e pathale request ta 5 minute er beshi cholbe, ar beshirbhag HTTP
+> client tar age-i give up kore dey (Node er fetch 5 minute e
+> `UND_ERR_HEADERS_TIMEOUT` mare, nginx 60 second, Cloudflare 100 second)।
+> Rate limit domain hishebe charge hoy, tai batch korle extra kono dam nai.
+> UI eta nije-i kore.
 
 ### Boro list er jonno kon poddhoti
 

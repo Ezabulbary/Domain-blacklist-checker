@@ -398,7 +398,7 @@ mail.contoso.org"></textarea>
         resp: '{\n  "ok": true,\n  "domain": "example.com",\n  "score": 95,\n  "verdict": "listed",\n  "listedCount": 1,\n  "table": [ { "name": "Spamhaus ZEN", "state": "ok", "ttl": null, "responseMs": 34 }, … ]\n}' },
       { method: 'POST', path: '/api/check/bulk', body: { domains: ['example.com', 'test.org'] },
         title: 'Bulk check',
-        desc: 'Check many domains at once. Body can be { "domains": [...] }, { "text": "one per line" }, or a raw text/CSV body. Add ?format=csv for a CSV download.',
+        desc: 'Check many domains at once. Body can be { "domains": [...] }, { "text": "one per line" }, or a raw text/CSV body. Add ?format=csv for a CSV download, or auth=1 to include SPF, DKIM and DMARC. Send 40 to 50 per request: a few hundred domains in one call runs for minutes and most HTTP clients and proxies give up before it returns. The rate limiter charges per domain, so batching costs no more than one large call.',
         resp: '{\n  "ok": true,\n  "summary": { "total": 2, "clean": 1, "listed": 1, "blacklisted": 0 },\n  "results": [ { "domain": "example.com", "verdict": "clean", "score": 100 }, … ]\n}' },
       { method: 'GET', path: '/api/auth', q: 'domain=example.com',
         title: 'Authentication health',
@@ -933,31 +933,132 @@ mail.contoso.org"></textarea>
       bCount.textContent = uniqueCount(bInput.value) + ' domains';
     });
 
+    // A few hundred domains take minutes, so the list is sent in batches rather
+    // than as one long request. Three reasons: progress can be shown while it
+    // runs, a proxy or laptop sleep cannot throw away the whole run, and a batch
+    // that fails costs only its own domains. The server charges the rate limiter
+    // per domain, so batching costs the same as sending everything at once.
+    const CHUNK = 40;
+    // The first batch is small so the table starts filling in a few seconds
+    // instead of after a full batch. Waiting 40 seconds for the first sign of
+    // life makes a working run look stuck.
+    const FIRST_CHUNK = 10;
+    const MAX_TOTAL = 2000;
+    let running = false, cancel = false;
+
+    function dedupe(list) {
+      const seen = new Set(), out = [];
+      for (const d of list) {
+        const k = d.toLowerCase();
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(d);
+      }
+      return out;
+    }
+
+    const fmtLeft = (ms) => {
+      const s = Math.round(ms / 1000);
+      return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+    };
+
     bGo.addEventListener('click', async () => {
-      const domains = parseList(bInput.value);
+      if (running) { cancel = true; bGo.textContent = 'Stopping…'; return; }
+
+      let domains = dedupe(parseList(bInput.value));
       if (!domains.length) { bOut.innerHTML = '<div class="card err">Add at least one domain.</div>'; return; }
-      bGo.disabled = true;
+      let overflow = 0;
+      if (domains.length > MAX_TOTAL) { overflow = domains.length - MAX_TOTAL; domains = domains.slice(0, MAX_TOTAL); }
+
+      const withAuth = document.getElementById('bulk-auth').checked;
+      running = true; cancel = false;
+      bGo.textContent = 'Stop';
       bCsv.classList.add('hidden');
-      bOut.innerHTML = '<div class="card"><span class="spinner"></span> Checking ' + uniqueCount(bInput.value)
-        + ' domains…<div class="progress"><div></div></div><div class="meta" style="margin-top:8px">'
-        + 'Running ~5 at a time to respect DNSBL rate limits.</div></div>';
+      lastResults = [];
+
+      const total = domains.length;
+      const started = Date.now();
+      let failedBatches = 0;
+
+      bOut.innerHTML = '<div class="card" id="bulk-live">'
+        + '<div id="bulk-status"><span class="spinner"></span> Starting…</div>'
+        + '<div class="progress"><div id="bulk-bar"></div></div>'
+        + '<div class="meta" style="margin-top:8px" id="bulk-note"></div>'
+        + '<div class="table-scroll" id="bulk-table" style="margin-top:14px"></div></div>';
+      const elBar = document.getElementById('bulk-bar');
+      const elStatus = document.getElementById('bulk-status');
+      const elNote = document.getElementById('bulk-note');
+      const elTable = document.getElementById('bulk-table');
+
+      const paint = (doneCount) => {
+        const pct = total ? Math.round((doneCount / total) * 100) : 100;
+        elBar.style.width = pct + '%';
+        const counts = tally(lastResults);
+        const elapsed = Date.now() - started;
+        const eta = doneCount > 0 && doneCount < total
+          ? ' · about ' + fmtLeft((elapsed / doneCount) * (total - doneCount)) + ' left'
+          : '';
+        elStatus.innerHTML = (doneCount < total ? '<span class="spinner"></span> ' : '')
+          + doneCount + ' of ' + total + ' checked' + eta;
+        elNote.textContent = counts.listed + ' listed, ' + counts.clean + ' clean, '
+          + counts.unknown + ' unknown, ' + counts.invalid + ' could not be checked'
+          + (withAuth ? ', authentication included' : '')
+          + (failedBatches ? ' · ' + failedBatches + ' batch(es) failed and were recorded as errors' : '');
+        elTable.innerHTML = renderTable();
+        wireSort();
+      };
+
       try {
-        const res = await fetch('/api/check/bulk', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ domains, auth: document.getElementById('bulk-auth').checked }),
-        });
-        const data = await res.json();
-        if (!data.ok) { bOut.innerHTML = '<div class="card err">✗ ' + esc(data.error) + '</div>'; return; }
-        lastResults = data.results;
-        renderBulk(data);
-        bCsv.classList.remove('hidden');
-      } catch (err) {
-        bOut.innerHTML = '<div class="card err">Request failed: ' + esc(err.message) + '</div>';
+        let i = 0;
+        while (i < total) {
+          if (cancel) break;
+          const size = i === 0 ? Math.min(FIRST_CHUNK, total) : CHUNK;
+          const batch = domains.slice(i, i + size);
+          i += size;
+          try {
+            const res = await fetch('/api/check/bulk', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ domains: batch, auth: withAuth }),
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
+            lastResults = lastResults.concat(data.results.filter(Boolean));
+          } catch (err) {
+            // Keep going. Losing one batch of 40 is far better than losing the
+            // 400 domains already checked.
+            failedBatches += 1;
+            lastResults = lastResults.concat(
+              batch.map((d) => ({ ok: false, input: d, error: 'batch failed: ' + err.message })),
+            );
+          }
+          paint(Math.min(i, total));
+        }
+
+        const done = lastResults.length;
+        elBar.style.width = '100%';
+        // Stopping only takes effect between batches, so a Stop clicked during
+        // the last batch still finishes everything. Say what actually happened.
+        elStatus.textContent = (cancel && done < total ? 'Stopped after ' + done + ' of ' + total : 'Checked ' + done + ' domains')
+          + ' in ' + fmtLeft(Date.now() - started);
+        if (overflow) elNote.textContent += ' · ' + overflow + ' domains over the ' + MAX_TOTAL + ' limit were not checked';
+        if (done) bCsv.classList.remove('hidden');
       } finally {
-        bGo.disabled = false;
+        running = false; cancel = false;
+        bGo.textContent = 'Check all';
       }
     });
+
+    function tally(rows) {
+      const t = { clean: 0, listed: 0, unknown: 0, invalid: 0 };
+      for (const r of rows) {
+        if (!r || !r.ok) t.invalid += 1;
+        else if (r.verdict === 'clean') t.clean += 1;
+        else if (r.verdict === 'listed' || r.verdict === 'blacklisted') t.listed += 1;
+        else t.unknown += 1;
+      }
+      return t;
+    }
 
     bCsv.addEventListener('click', () => {
       const csv = toCsv(lastResults);
@@ -970,25 +1071,6 @@ mail.contoso.org"></textarea>
     });
 
     const VERDICT_RANK = { blacklisted: 0, listed: 1, unknown: 2, invalid: 3, clean: 4 };
-
-    function renderBulk(data) {
-      const s = data.summary;
-      let h = '<div class="card"><div class="summary">';
-      h += '<span class="chip">' + s.total + ' total</span>';
-      h += '<span class="chip clean">' + s.clean + ' clean</span>';
-      h += '<span class="chip listed">' + s.listed + ' listed</span>';
-      h += '<span class="chip blacklisted">' + s.blacklisted + ' blacklisted</span>';
-      h += '<span class="chip unknown">' + s.unknown + ' unknown</span>';
-      if (s.invalid) h += '<span class="chip invalid">' + s.invalid + ' invalid</span>';
-      h += '<span class="spacer"></span><span class="hint meta">' + (s.tookMs / 1000).toFixed(1) + 's</span>';
-      h += '</div>';
-      if (data.skipped && (data.skipped.blank || data.skipped.truncated))
-        h += '<div class="meta" style="margin-top:8px">skipped ' + data.skipped.blank + ' blank'
-          + (data.skipped.truncated ? ', ' + data.skipped.truncated + ' over the ' + data.skipped.max + ' cap' : '') + '</div>';
-      h += '<div class="table-scroll">' + renderTable() + '</div></div>';
-      bOut.innerHTML = h;
-      wireSort();
-    }
 
     function sortedResults() {
       const rows = [...lastResults];
@@ -1028,9 +1110,11 @@ mail.contoso.org"></textarea>
           continue;
         }
         const rowCls = r.verdict === 'clean' ? 'ok-row' : (r.verdict === 'blacklisted' ? 'bad-row' : (r.verdict === 'listed' ? 'warn-row' : ''));
-        const listings = r.listings.length ? r.listings.map((l) => esc(l.zone)).join(', ') : '<span class="mini">None</span>';
+        const ls = r.listings || [];
+        const ips = (r.dns && r.dns.a) || [];
+        const listings = ls.length ? ls.map((l) => esc(l.zone)).join(', ') : '<span class="mini">None</span>';
         h += '<tr class="' + rowCls + '"><td>' + esc(r.domain)
-          + (r.dns.a.length ? ' <span class="mini">' + esc(r.dns.a[0]) + (r.dns.a.length > 1 ? ' +' + (r.dns.a.length - 1) : '') + '</span>' : '')
+          + (ips.length ? ' <span class="mini">' + esc(ips[0]) + (ips.length > 1 ? ' +' + (ips.length - 1) : '') + '</span>' : '')
           + '</td>'
           + '<td><span class="badge b-' + r.verdict + '">' + esc(r.verdict) + '</span></td>'
           + '<td class="score-cell">' + r.score + '</td>';
@@ -1072,8 +1156,10 @@ mail.contoso.org"></textarea>
           ? [r.riskScore ?? '', a.score ?? '', a.spf ?? '', a.dkim ?? '', a.dmarc ?? '', a.dmarcPolicy ?? '', a.mx ?? '', a.ptr ?? '']
           : [];
         const row = r.ok
-          ? [r.input, r.domain, ...authCells, r.verdict, r.score, r.counts.listed, r.counts.clean, r.counts.unknown,
-             r.dns.a.join(' '), r.listings.map((l) => l.subject + '@' + l.zone).join(' '), '']
+          ? [r.input, r.domain, ...authCells, r.verdict, r.score,
+             (r.counts || {}).listed ?? '', (r.counts || {}).clean ?? '', (r.counts || {}).unknown ?? '',
+             ((r.dns && r.dns.a) || []).join(' '),
+             (r.listings || []).map((l) => l.subject + '@' + l.zone).join(' '), '']
           : [r.input, '', ...authCells.map(() => ''), 'invalid', '', '', '', '', '', '', r.error];
         lines.push(row.map(cell).join(','));
       }

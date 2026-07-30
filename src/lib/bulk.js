@@ -55,10 +55,19 @@ export async function checkMany(inputs, opts = {}) {
     while (true) {
       const i = next++;
       if (i >= work.length) return;
-      results[i] = await checkFn(work[i], {
-        resolver,
-        overallTimeoutMs: opts.overallTimeoutMs,
-      });
+      try {
+        results[i] = await checkFn(work[i], {
+          resolver,
+          overallTimeoutMs: opts.overallTimeoutMs,
+          calibration: opts.calibration,
+        });
+      } catch (e) {
+        // One domain must never take down the batch. A 500-domain run costs
+        // minutes and tens of thousands of DNS queries; throwing it all away
+        // because a single lookup failed in an unexpected way is the worst
+        // possible outcome. Record the failure as a row and keep going.
+        results[i] = { ok: false, input: work[i], error: `check failed: ${e?.code || e?.message || e}` };
+      }
       done += 1;
       if (opts.onProgress) opts.onProgress(done, work.length);
     }
@@ -87,7 +96,7 @@ export async function checkMany(inputs, opts = {}) {
 async function auditDomain(input, opts = {}) {
   const r = await analyzeDomain(input, opts);
   if (!r.ok) return r;
-  const bl = r.blacklist;
+  const bl = r.blacklist || {};
   return {
     ok: true,
     input: r.input,
@@ -97,17 +106,20 @@ async function auditDomain(input, opts = {}) {
     riskScore: r.riskScore,
     standing: r.standing,
     counts: { listed: bl.listedCount, clean: bl.okCount, unknown: bl.timeoutCount, skipped: bl.skippedCount },
-    dns: r.dns,
-    listings: bl.listings,
+    dns: r.dns || { a: [], aaaa: [], mx: [], errors: {} },
+    listings: bl.listings || [],
+    // Every field is read defensively. A failed lookup returns a partial record
+    // (status 'unknown'), and across a few hundred domains that is a certainty,
+    // not an edge case.
     auth: r.auth && {
-      score: r.auth.score,
-      spf: r.auth.spf.present ? (r.auth.spf.status === 'pass' ? 'pass' : 'weak') : 'missing',
-      spfPolicy: r.auth.spf.policy || '',
-      dkim: r.auth.dkim.present ? 'pass' : 'none',
-      dkimSelectors: (r.auth.dkim.selectors || []).map((x) => x.selector).join(' '),
-      dmarc: r.auth.dmarc.present ? (r.auth.dmarc.policy === 'reject' ? 'pass' : 'weak') : 'missing',
-      dmarcPolicy: r.auth.dmarc.policy || '',
-      mx: (r.auth.mx && r.auth.mx.records.length) || 0,
+      score: r.auth.score ?? 0,
+      spf: r.auth.spf?.present ? (r.auth.spf.status === 'pass' ? 'pass' : 'weak') : 'missing',
+      spfPolicy: r.auth.spf?.policy || '',
+      dkim: r.auth.dkim?.present ? 'pass' : 'none',
+      dkimSelectors: (r.auth.dkim?.selectors || []).map((x) => x.selector).join(' '),
+      dmarc: r.auth.dmarc?.present ? (r.auth.dmarc.policy === 'reject' ? 'pass' : 'weak') : 'missing',
+      dmarcPolicy: r.auth.dmarc?.policy || '',
+      mx: r.auth.mx?.records?.length || 0,
       ptr: r.auth.ptr ? r.auth.ptr.status : 'n/a',
     },
   };
@@ -116,8 +128,9 @@ async function auditDomain(input, opts = {}) {
 function summarize(results, tookMs) {
   const s = { total: results.length, clean: 0, listed: 0, blacklisted: 0, unknown: 0, invalid: 0, tookMs };
   for (const r of results) {
-    if (!r.ok) s.invalid += 1;
-    else s[r.verdict] = (s[r.verdict] ?? 0) + 1;
+    if (!r || !r.ok) s.invalid += 1;
+    else if (r.verdict) s[r.verdict] = (s[r.verdict] ?? 0) + 1;
+    else s.unknown += 1;
   }
   return s;
 }
@@ -133,6 +146,7 @@ export function resultsToCsv(results) {
   }
   const rows = [head.join(',')];
   for (const r of results) {
+    if (!r) continue;
     const a = r.auth || {};
     const authCells = withAuth
       ? [r.riskScore ?? '', a.score ?? '', a.spf ?? '', a.spfPolicy ?? '', a.dkim ?? '', a.dkimSelectors ?? '',
@@ -145,11 +159,11 @@ export function resultsToCsv(results) {
           ...authCells,
           r.verdict,
           r.score,
-          r.counts.listed,
-          r.counts.clean,
-          r.counts.unknown,
-          r.dns.a.join(' '),
-          r.listings.map((l) => `${l.subject}@${l.zone}`).join(' '),
+          r.counts?.listed ?? '',
+          r.counts?.clean ?? '',
+          r.counts?.unknown ?? '',
+          (r.dns?.a || []).join(' '),
+          (r.listings || []).map((l) => `${l.subject}@${l.zone}`).join(' '),
           '',
         ]
       : [r.input, '', ...(withAuth ? authCells.map(() => '') : []), 'invalid', '', '', '', '', '', '', r.error];

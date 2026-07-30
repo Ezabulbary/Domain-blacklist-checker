@@ -143,7 +143,7 @@ Tarpor abar: `npm run calibrate`. Trusted count baré jabe.
 
 Protita LISTED/CLEAN ekta real DNS answer, `nslookup` diye milao:
 ```
-nslookup 96.8.26.104.dnsbl.spfbl.net      → 127.0.0.4    = sotti listed
+nslookup 2.0.0.127.dnsbl.spfbl.net        → 127.0.0.2    = list er test entry, sotti listed
 nslookup 1.0.0.127.dnsbl.spfbl.net        → Non-existent = list ta mittha bole na
 ```
 Duita-i mille bujhbe list ta **discriminate korche**. Mane tar answer
@@ -183,3 +183,52 @@ sob client er result nosto hobe. Tai amra ta kori na.
    query kore, jokhon entry chole jabe tokhon bole dey.
 
 Mane: **manush ekbar form ta submit korbe, baki sob tool kore dey.**
+
+---
+
+## 7. Return code er mane. "Listed" ar "policy flag" ek jinis na
+
+Ekta zone e sob 127.0.0.x code **"tumi spammer"** mane na. Kichu code shudhu
+**address ta somporke ekta policy kotha** bole. Duitake ek kore dhorle mittha
+LISTED toiri hoy.
+
+**Dhora pora bug (fix kora hoyeche):** `dnsbl.spfbl.net`
+
+| Code | Mane | Listing? |
+|---|---|---|
+| `127.0.0.2` | confirmed spam source | ✅ haa |
+| `127.0.0.3` | suspected spam, ba RFC 5321 mene chole na | ✅ haa |
+| `127.0.0.4` | ei address e kono mail service nai (NAT / residential) | ❌ **na** |
+| `127.0.0.5` | ei IP range er abuse contact bishwasjoggo na | ❌ **na** |
+
+Amra domain er **A record** check kori, ar A record mane **web server**, mail
+server na. Tai `127.0.0.4` prochur domain er jonno ase. Proman, 30 ta boro
+bhalo domain diye test:
+
+```
+age  : 11/30 "listed"   (9 tai shudhu SPFBL 127.0.0.4)
+ekhon:  6/30 "listed"   (SPFBL er policy flag ar listing hishebe gone hoy na)
+```
+
+SPFBL nije-o bole ei zone diye SMTP e mail **reject kora jabe na**, shudhu
+scoring e use korte hobe. Tai eta listing na. Ekhon row ta **clean** dekhay, ar
+code er mane pashe lekha thake, jate tothyo hariye na jay.
+
+**Kivabe fix hoyeche:** zone catalog e `listedCodes` dile shudhu oi code gulo
+listing hishebe gone hoy (`src/lib/zones.js`). Hostkarma-o eki vabe kaj kore
+(tar `127.0.0.1` = whitelist, listing na).
+
+### ZapBL RHSBL somporke ekta kotha
+`rhsbl.zapbl.net` **sotti** microsoft.com, cloudflare.com, github.com,
+netflix.com, nytimes.com ke listed bole. Eta mittha na, list ta discriminate
+kore (google.com, apple.com, iana.org → clean, zone er serial-o taja). Mane
+ZapBL sotti-i aggressive. Tai amra row ta **dekhai** (lukai na), kintu tar
+weight 5 (low) rakha, jate score e prabhab kom pore. 60 ta boro domain e tar
+hit rate 12%.
+
+### Nijei protita LISTED verify korar niyom
+1. Row er code ta dekho (`127.0.0.x`).
+2. Oi code ta oi list er **spam** code kina, na **policy** code, seta list er
+   documentation e milao. Row e mane ta already lekha thake.
+3. Control probe: `nslookup 1.0.0.127.<zone>` → **Non-existent** hote hobe.
+   Na hole list ta shobaike listed bole, ar amader calibration take baad dey.
