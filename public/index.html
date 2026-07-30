@@ -234,6 +234,23 @@
     ol.steps li { margin-bottom: 8px; }
     ol.muted-steps { color: var(--muted); font-size: 13.5px; }
     a.delist.big { display: inline-block; margin-top: 14px; padding: 11px 20px; font-size: 14px; }
+    .rd { margin: 4px 0 8px; }
+    .rd-row { display: grid; grid-template-columns: 44px 1fr; gap: 4px 10px; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 9px; margin-bottom: 6px; font-size: 13.5px; }
+    .rd-mark { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; padding-top: 2px; }
+    .rd-ok .rd-mark { color: var(--clean); } .rd-bad .rd-mark { color: var(--bad); }
+    .rd-warn .rd-mark { color: var(--muted); }
+    .rd-ok { border-left: 3px solid var(--clean); } .rd-bad { border-left: 3px solid var(--bad); }
+    .rd-warn { border-left: 3px solid var(--line2); }
+    .rd-l { font-weight: 600; }
+    .rd-d { grid-column: 2; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+    .ok-banner { border: 1px solid var(--clean); background: rgba(53,196,106,.12); color: var(--clean);
+      border-radius: 10px; padding: 10px 14px; margin: 10px 0; font-size: 13.5px; font-weight: 600; }
+    .warn-banner { border: 1px solid var(--listed); background: rgba(224,169,44,.10); color: var(--fg);
+      border-radius: 10px; padding: 10px 14px; margin: 8px 0 4px; font-size: 13px; }
+    .modal-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+    .modal-actions .ghost { padding: 11px 18px; font-size: 13.5px; }
+    .watch-out { margin-top: 10px; font-size: 13px; }
     footer { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff;
       border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; }
@@ -735,7 +752,7 @@ mail.contoso.org"></textarea>
           ? esc(r.reason)
           : (r.state === 'ok' ? '' : '<span class="mini">' + esc(r.reason) + '</span>');
         const action = r.state === 'listed'
-          ? '<button class="delist" data-zone="' + esc(r.zone) + '" data-subject="' + esc(r.subjects.join(', ')) + '">How to remove</button>'
+          ? '<button class="delist" data-zone="' + esc(r.zone) + '" data-subject="' + esc(r.subjects.join(', ')) + '">Start removal</button>'
           : '';
         h += '<tr class="' + STATE_CLS[r.state] + '">'
           + '<td class="st"><span class="dot">' + STATE_ICON[r.state] + '</span>' + STATE_LABEL[r.state] + '</td>'
@@ -785,30 +802,112 @@ mail.contoso.org"></textarea>
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') modal.classList.add('hidden'); });
 
+    let watchTimer = null;
+    function stopWatch() { if (watchTimer) { clearInterval(watchTimer); watchTimer = null; } }
+    modal.addEventListener('click', (e) => { if (e.target === modal) stopWatch(); });
+    document.getElementById('removal-close').addEventListener('click', stopWatch);
+
     async function openRemoval(zone, subject) {
       const body = document.getElementById('removal-body');
-      body.innerHTML = '<span class="spinner"></span> Loading removal steps.';
+      const first = (subject || '').split(',')[0].trim();
+      stopWatch();
+      body.innerHTML = '<span class="spinner"></span> Checking what this list needs from you.';
       modal.classList.remove('hidden');
       try {
-        const res = await fetch('/api/removal?zone=' + encodeURIComponent(zone) + '&subject=' + encodeURIComponent(subject || ''));
-        const data = await res.json();
-        if (!data.ok) { body.innerHTML = '<p class="err">' + esc(data.error) + '</p>'; return; }
-        const g = data.guide;
-        let h = '<h2 class="modal-t">Get removed from ' + esc(g.name) + '</h2>';
-        h += '<div class="modal-sub"><b>' + esc(g.subject || '') + '</b> is listed. '
-          + '<span class="kind kind-' + esc(g.kind) + '">' + esc(data.kindLabels[g.kind] || '') + '</span></div>';
+        const dom = (report && report.domain) || '';
+        const [gRes, rRes] = await Promise.all([
+          fetch('/api/removal?zone=' + encodeURIComponent(zone) + '&subject=' + encodeURIComponent(first)),
+          fetch('/api/delist/start?zone=' + encodeURIComponent(zone) + '&subject=' + encodeURIComponent(first)
+                + '&domain=' + encodeURIComponent(dom)),
+        ]);
+        const gd = await gRes.json();
+        const rd = await rRes.json();
+        if (!gd.ok) { body.innerHTML = '<p class="err">' + esc(gd.error) + '</p>'; return; }
+        const g = gd.guide;
+
+        let h = '<h2 class="modal-t">Remove ' + esc(first) + ' from ' + esc(g.name) + '</h2>';
+        h += '<div class="modal-sub"><span class="kind kind-' + esc(g.kind) + '">'
+          + esc(gd.kindLabels[g.kind] || '') + '</span></div>';
         h += '<p class="modal-p">' + esc(g.means) + '</p>';
-        h += '<h3>Steps for this list</h3><ol class="steps">'
-          + g.steps.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ol>';
-        h += '<h3>Do this first, or you will be listed again</h3><ol class="steps muted-steps">'
-          + g.common.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ol>';
-        if (g.url) {
-          h += '<a class="delist big" href="' + esc(g.url) + '" target="_blank" rel="noopener">Open the ' + esc(g.name) + ' removal page</a>';
+
+        if (rd.ok && rd.stillListed === false) {
+          h += '<div class="ok-banner">This entry is already gone. Nothing to submit.</div>';
         }
+
+        // 1. What the tool checked for you.
+        if (rd.ok && rd.checks) {
+          h += '<h3>Checked for you</h3><div class="rd">';
+          for (const c of rd.checks) {
+            h += '<div class="rd-row ' + (c.ok ? 'rd-ok' : (c.required ? 'rd-bad' : 'rd-warn')) + '">'
+              + '<span class="rd-mark">' + (c.ok ? 'OK' : (c.required ? 'FIX' : '--')) + '</span>'
+              + '<span class="rd-l">' + esc(c.label) + '</span>'
+              + '<span class="rd-d">' + esc(c.detail) + '</span></div>';
+          }
+          h += '</div>';
+          if (!rd.ready) {
+            h += '<div class="warn-banner">Fix the items marked FIX first. '
+              + 'Submitting now will usually be rejected, and the entry comes straight back.</div>';
+          }
+        }
+
+        // 2. The action, which depends on the list.
+        if (rd.ok && rd.autoClears) {
+          h += '<h3>What happens next</h3>'
+            + '<p class="modal-p">This list clears by itself ' + esc(rd.autoClears)
+            + '. There is no form to submit. Stop the cause, then watch below.</p>';
+        } else {
+          h += '<h3>Steps for this list</h3><ol class="steps">'
+            + g.steps.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ol>';
+        }
+
+        h += '<h3>Do this first, or it comes back</h3><ol class="steps muted-steps">'
+          + g.common.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ol>';
+
+        h += '<div class="modal-actions">';
+        const url = (rd.ok && rd.prefillUrl) || g.url;
+        if (url && !(rd.ok && rd.autoClears)) {
+          h += '<a class="delist big" href="' + esc(url) + '" target="_blank" rel="noopener">Open the removal form</a>';
+        }
+        h += '<button class="ghost" id="watch-btn" type="button">Watch until cleared</button>';
+        h += '</div><div id="watch-out" class="watch-out"></div>';
+
         body.innerHTML = h;
+
+        const wb = document.getElementById('watch-btn');
+        if (wb) wb.addEventListener('click', () => startWatch(zone, first, wb));
       } catch (err) {
-        body.innerHTML = '<p class="err">Could not load the guide: ' + esc(err.message) + '</p>';
+        body.innerHTML = '<p class="err">Could not load: ' + esc(err.message) + '</p>';
       }
+    }
+
+    // Poll the list itself until the entry disappears. This is the part that can
+    // genuinely be automated: the request still has to be made by a human.
+    function startWatch(zone, subject, btn) {
+      const out = document.getElementById('watch-out');
+      if (watchTimer) { stopWatch(); btn.textContent = 'Watch until cleared'; out.innerHTML = ''; return; }
+      btn.textContent = 'Stop watching';
+      let n = 0;
+      const tick = async () => {
+        n += 1;
+        out.innerHTML = '<span class="spinner"></span> Re-checking the list. Attempt ' + n + '.';
+        try {
+          const res = await fetch('/api/delist/status?zone=' + encodeURIComponent(zone) + '&subject=' + encodeURIComponent(subject));
+          const d = await res.json();
+          if (d.listed === false) {
+            out.innerHTML = '<div class="ok-banner">Cleared. ' + esc(subject) + ' is no longer on this list.</div>';
+            stopWatch(); btn.textContent = 'Watch until cleared';
+          } else if (d.listed === true) {
+            out.innerHTML = '<span class="mini">Still listed. Checked ' + n + ' time' + (n > 1 ? 's' : '')
+              + ', re-checking every 60 seconds. You can close this and come back.</span>';
+          } else {
+            out.innerHTML = '<span class="mini">The list did not answer on attempt ' + n + '. Will try again.</span>';
+          }
+        } catch {
+          out.innerHTML = '<span class="mini">Check failed, will try again.</span>';
+        }
+      };
+      tick();
+      watchTimer = setInterval(tick, 60000);
     }
 
     // ================= BULK =================

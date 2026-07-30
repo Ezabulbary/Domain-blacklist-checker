@@ -13,6 +13,7 @@ import { checkAuth } from './lib/auth.js';
 import { createApiKey, validateApiKey } from './lib/apikeys.js';
 import { getCalibration, isTrusted, summarize } from './lib/calibrate.js';
 import { removalGuide, KIND_LABEL } from './lib/removal.js';
+import { readiness, stillListed } from './lib/delist.js';
 import { buildResolver } from './lib/resolve.js';
 import { ALL_ZONES, CATEGORIES } from './lib/zones.js';
 import { dbEnabled } from './db/pool.js';
@@ -204,6 +205,30 @@ export function buildServer() {
       kindLabels: KIND_LABEL,
       guide: removalGuide({ zone: z.zone, name: z.name, type: z.type, delist: z.delist, subject }),
     };
+  });
+
+  // Start an assisted removal: check from DNS whether the sender meets what the
+  // list requires, and hand back a prefilled removal URL.
+  app.get('/api/delist/start', async (req, reply) => {
+    const zone = (req.query.zone || '').toString().trim();
+    const subject = (req.query.subject || '').toString().trim().split(',')[0].trim();
+    const domain = (req.query.domain || '').toString().trim() || null;
+    if (!zone || !subject) return reply.code(400).send({ ok: false, error: 'zone and subject are required' });
+    if (!(await authOk(req, reply))) return;
+    if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
+    const z = ALL_ZONES.find((x) => x.zone === zone);
+    if (!z) return reply.code(404).send({ ok: false, error: 'unknown blocklist' });
+    return { ok: true, name: z.name, ...(await readiness({ zone, subject, domain }, resolver)) };
+  });
+
+  // Poll after submitting: has the entry actually gone?
+  app.get('/api/delist/status', async (req, reply) => {
+    const zone = (req.query.zone || '').toString().trim();
+    const subject = (req.query.subject || '').toString().trim();
+    if (!zone || !subject) return reply.code(400).send({ ok: false, error: 'zone and subject are required' });
+    if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
+    const listed = await stillListed(zone, subject, resolver);
+    return { ok: true, zone, subject, listed, checkedAt: new Date().toISOString() };
   });
 
   // Generate a new API key. Optional { email } ties it to a user record.

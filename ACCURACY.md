@@ -148,3 +148,38 @@ nslookup 1.0.0.127.dnsbl.spfbl.net        → Non-existent = list ta mittha bole
 ```
 Duita-i mille bujhbe list ta **discriminate korche**. Mane tar answer
 bishwasjoggo।
+
+
+---
+
+## 6. Delisting: ki automate hoy, ki hoy na
+
+**Puro automatic delist sombhob na.** Karon:
+
+| Badha | Bastobota |
+|---|---|
+| CAPTCHA | SURBL, Barracuda, SPFBL, UCEPROTECT er form e CAPTCHA |
+| Email confirmation | Onek list `postmaster@` / `abuse@` te confirm pathay |
+| Manual review | Spamhaus SBL manush dekhe |
+| Terms of service | Beshirbhag list automated submission **nishedh** kore |
+| Taka | UCEPROTECT express removal paid |
+
+Bot diye form submit korle **amader server er IP-i ban** hobe, ar oi list theke
+sob client er result nosto hobe. Tai amra ta kori na.
+
+**Ja automate kora hoyeche (Start removal button):**
+
+1. **Readiness check.** Live DNS diye dekhe tumi oi list er short purno korecho
+   kina: PTR ache kina, PTR ulta kore same IP e ase kina (FCrDNS), domain e MX
+   ache kina (confirmation mail pabe kina), SPF ar DMARC ache kina. Na thakle
+   **FIX** mark kore dekhay. Ei gulo na thakle removal request **reject** hoto.
+2. **Already cleared?** Button e click korar somoy list ke abar jiggesh kore.
+   Age theke clear hoye thakle bole dey, khali khali form bhorte hoy na.
+3. **Auto-clearing list chinte pare.** SpamCop, UCEPROTECT L1, Backscatterer,
+   Truncate, blocklist.de, PSBL, egulo nije-i chole jay. Tokhon "form nai, sudhu
+   karon thamao ar opekkha koro" bole.
+4. **Prefilled form.** Removal page ta IP/domain already bhora obosthay khole.
+5. **Watch until cleared.** Request pathanor por prottek minute e list ke abar
+   query kore, jokhon entry chole jabe tokhon bole dey.
+
+Mane: **manush ekbar form ta submit korbe, baki sob tool kore dey.**
