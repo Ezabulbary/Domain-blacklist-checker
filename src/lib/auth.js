@@ -14,8 +14,13 @@ const flat = (txt) => (Array.isArray(txt) ? txt.join('') : String(txt));
  * Full authentication health for a domain: SPF, DKIM, DMARC, MX and PTR, all
  * from live DNS. Returns a structured object plus a 0-100 auth score.
  *
+ * With `withRecords: true` the full DNS record sets (A, AAAA, CNAME, MX, NS,
+ * TXT, SOA, CAA) are included under `records`. That costs ~7 extra queries per
+ * domain, so it is opt-in: single-domain views want it, a 500-domain bulk run
+ * does not.
+ *
  * @param {string} domain      registrable / mail domain
- * @param {object} [opts]      { resolver, ips, selectors }
+ * @param {object} [opts]      { resolver, ips, selectors, withRecords }
  */
 export async function checkAuth(domain, opts = {}) {
   // Auth TXT records (especially SPF on big senders) can be large and slow, so
@@ -23,16 +28,46 @@ export async function checkAuth(domain, opts = {}) {
   const resolver = opts.resolver || buildResolver(null, { timeout: 5000, tries: 2 });
   const selectors = opts.selectors || COMMON_SELECTORS;
 
-  const [spf, dmarc, mx, dkim, ptr] = await Promise.all([
+  const [spf, dmarc, mx, dkim, ptr, records] = await Promise.all([
     checkSpf(domain, resolver),
     checkDmarc(domain, resolver),
     checkMx(domain, resolver),
     checkDkim(domain, selectors, resolver),
     opts.ips && opts.ips.length ? checkPtr(opts.ips, domain, resolver) : Promise.resolve(null),
+    opts.withRecords ? lookupDnsRecords(domain, resolver) : Promise.resolve(null),
   ]);
 
   const score = authScore({ spf, dkim, dmarc, ptr });
-  return { spf, dkim, dmarc, mx, ptr, score };
+  return { spf, dkim, dmarc, mx, ptr, score, records };
+}
+
+/**
+ * The complete DNS record set for a domain, one lookup per type. Every lookup
+ * fails independently: a missing type is just empty, and only unexpected
+ * failures (not ENOTFOUND/ENODATA) land in `errors`, so one dead type never
+ * hides the rest.
+ */
+export async function lookupDnsRecords(domain, resolver) {
+  const out = { a: [], aaaa: [], cname: [], mx: [], ns: [], txt: [], soa: null, caa: [], errors: {} };
+  const grab = async (key, fn, map) => {
+    try {
+      const v = await fn();
+      out[key] = map ? map(v) : v;
+    } catch (e) {
+      if (e.code !== 'ENOTFOUND' && e.code !== 'ENODATA') out.errors[key] = e.code || 'error';
+    }
+  };
+  await Promise.all([
+    grab('a', () => resolver.resolve4(domain, { ttl: true })),
+    grab('aaaa', () => resolver.resolve6(domain, { ttl: true })),
+    grab('cname', () => resolver.resolveCname(domain)),
+    grab('mx', () => resolver.resolveMx(domain), (v) => [...v].sort((x, y) => x.priority - y.priority)),
+    grab('ns', () => resolver.resolveNs(domain), (v) => [...v].sort()),
+    grab('txt', () => resolver.resolveTxt(domain), (v) => v.map(flat)),
+    grab('soa', () => resolver.resolveSoa(domain)),
+    grab('caa', () => resolver.resolveCaa(domain)),
+  ]);
+  return out;
 }
 
 /** SPF: find the v=spf1 record, read the all-qualifier, count DNS lookups. */
@@ -104,7 +139,12 @@ export async function checkDkim(domain, selectors, resolver) {
       try {
         const txt = (await resolver.resolveTxt(`${sel}._domainkey.${domain}`)).map(flat).join('');
         if (/v=DKIM1|k=rsa|p=[A-Za-z0-9]/i.test(txt)) {
-          found.push({ selector: sel, keyType: (txt.match(/k=([a-z0-9]+)/i) || [])[1] || 'rsa' });
+          found.push({
+            selector: sel,
+            keyType: (txt.match(/k=([a-z0-9]+)/i) || [])[1] || 'rsa',
+            name: `${sel}._domainkey.${domain}`,
+            record: txt,
+          });
         }
       } catch {
         /* selector not published. Normal */

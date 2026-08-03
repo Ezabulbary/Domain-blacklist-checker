@@ -9,7 +9,9 @@ import { buildResolver } from './resolve.js';
  * plus recommendations and a placeholder for ESP-sourced signals.
  *
  * @param {string} input  domain or IP
- * @param {object} [opts] { resolver, signals }  (signals = ESP metrics, if any)
+ * @param {object} [opts] { resolver, signals, withRecords }
+ *                        (signals = ESP metrics; withRecords includes the full
+ *                        DNS record set under auth.records; see checkAuth)
  */
 export async function analyzeDomain(input, opts = {}) {
   const resolver = opts.resolver || buildResolver();
@@ -21,10 +23,17 @@ export async function analyzeDomain(input, opts = {}) {
   });
   if (!bl.ok) return { ok: false, input, error: bl.error };
 
-  // Auth only makes sense for a domain (not a bare IP literal).
+  // Auth only makes sense for a domain (not a bare IP literal). Auth TXT
+  // lookups want a patient resolver (5s, 2 tries), not the DNSBL-tuned one, so
+  // a caller can pass a dedicated `authResolver`; otherwise the shared one is
+  // reused (checkAuth builds its own patient resolver only when none is given).
   const auth = bl.isIp
     ? null
-    : await checkAuth(bl.domain, { resolver, ips: bl.resolvesTo });
+    : await checkAuth(bl.domain, {
+        resolver: opts.authResolver || resolver,
+        ips: bl.resolvesTo,
+        withRecords: opts.withRecords,
+      });
 
   const risk = riskScore({ bl, auth });
   const recommendations = recommend({ auth, table: bl.table });
@@ -50,6 +59,7 @@ export async function analyzeDomain(input, opts = {}) {
           dmarc: auth.dmarc,
           mx: auth.mx,
           ptr: auth.ptr,
+          records: auth.records || null,
         }
       : null,
 

@@ -251,6 +251,29 @@
     .modal-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
     .modal-actions .ghost { padding: 11px 18px; font-size: 13.5px; }
     .watch-out { margin-top: 10px; font-size: 13px; }
+    /* full DNS record display (Email auth tab) */
+    .rec-wrap { position: relative; margin: 6px 0 12px; }
+    .rec-box { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.6;
+      background: #080b11; border: 1px solid var(--line); border-radius: 10px; padding: 12px 74px 12px 14px;
+      color: #cdd8ea; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .rec-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted);
+      margin: 10px 0 0; overflow-wrap: anywhere; }
+    .rec-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+    .rec-head .z { font-weight: 700; }
+    .rec-st { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .rec-st.ok { color: var(--clean); } .rec-st.warn { color: var(--listed); } .rec-st.bad { color: var(--bad); }
+    table.dnsr { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+    table.dnsr th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase;
+      letter-spacing: .04em; padding: 8px 10px; border-bottom: 1px solid var(--line2); }
+    table.dnsr td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    table.dnsr td.ty { font-weight: 700; white-space: nowrap; width: 70px; color: var(--accent); }
+    table.dnsr td.val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; overflow-wrap: anywhere; }
+    table.dnsr td.ttl { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; width: 80px; }
+    .tag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 8px 0 4px; }
+    .tag { background: var(--bg2); border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; }
+    .tag .k { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+    .tag .v { font-size: 13px; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     footer { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff;
       border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; }
@@ -302,7 +325,12 @@ mail.contoso.org"></textarea>
 
     <!-- EMAIL AUTH -->
     <section id="auth-pane" class="hidden">
-      <div id="auth-out"><div class="card empty">Run a check on the Analyze tab first. The SPF, DKIM, DMARC, MX and PTR results for that domain appear here.</div></div>
+      <form id="auth-form">
+        <input type="text" id="auth-q" placeholder="Enter a domain, for example example.com" autocomplete="off" />
+        <button id="auth-go" type="submit">▶ Check auth</button>
+      </form>
+      <p class="hint2">SPF, DKIM, DMARC, MX and PTR health, plus every DNS record in full detail. Running an Analyze fills this tab too.</p>
+      <div id="auth-out"><div class="card empty">Check a domain above, or run one on the Analyze tab. The SPF, DKIM, DMARC, MX and PTR results with the full DNS records appear here.</div></div>
     </section>
 
     <!-- API -->
@@ -402,8 +430,8 @@ mail.contoso.org"></textarea>
         resp: '{\n  "ok": true,\n  "summary": { "total": 2, "clean": 1, "listed": 1, "blacklisted": 0 },\n  "results": [ { "domain": "example.com", "verdict": "clean", "score": 100 }, … ]\n}' },
       { method: 'GET', path: '/api/auth', q: 'domain=example.com',
         title: 'Authentication health',
-        desc: 'SPF, DKIM, DMARC, MX and PTR only. Add &selector=<sel> for an exact DKIM selector.',
-        resp: '{\n  "ok": true,\n  "domain": "example.com",\n  "score": 59,\n  "spf": { "present": true, "policy": "softfail (~all)" },\n  "dkim": { "present": true, "selectors": [ … ] },\n  "dmarc": { "present": true, "policy": "reject" }\n}' },
+        desc: 'SPF, DKIM, DMARC, MX and PTR, plus the full DNS record sets (A, AAAA, CNAME, MX, NS, TXT, SOA, CAA) under records. Add &selector=<sel> for an exact DKIM selector.',
+        resp: '{\n  "ok": true,\n  "domain": "example.com",\n  "score": 59,\n  "spf": { "present": true, "record": "v=spf1 …", "policy": "softfail (~all)" },\n  "dkim": { "present": true, "selectors": [ { "selector": "…", "record": "v=DKIM1; …" } ] },\n  "dmarc": { "present": true, "record": "v=DMARC1; …", "policy": "reject" },\n  "records": { "a": [ … ], "mx": [ … ], "ns": [ … ], "txt": [ … ], "soa": { … } }\n}' },
       { method: 'GET', path: '/api/zones',
         title: 'Blacklist catalog',
         desc: 'All zones we query, with category, weight and severity.',
@@ -660,12 +688,13 @@ mail.contoso.org"></textarea>
       h += '</div></div>';
 
       // --- auth cards ---
-      // Authentication health lives on its own tab now.
-      document.getElementById('auth-out').innerHTML = d.auth
-        ? '<div class="card"><div class="meta" style="margin:0 0 4px">Authentication health for <b>' + esc(d.domain)
-          + '</b>. Auth score <b>' + d.auth.score + '/100</b></div>' + renderAuth(d.auth)
-          + renderAuthRecs(d.recommendations) + '</div>'
-        : '<div class="card empty">No authentication data for this input.</div>';
+      // Authentication health lives on its own tab now, with the full records.
+      if (d.auth) {
+        document.getElementById('auth-q').value = d.domain;
+        paintAuthPane(renderAuthPane(d.domain, d.auth, d.recommendations));
+      } else {
+        paintAuthPane('<div class="card empty">No authentication data for this input.</div>');
+      }
 
       // --- recommendations ---
       if (d.recommendations && d.recommendations.some((x) => x.area === 'blacklist')) {
@@ -763,6 +792,170 @@ mail.contoso.org"></textarea>
       h += '</tbody></table>';
       return h;
     }
+
+    // ================= EMAIL AUTH TAB =================
+    // Full-detail rendering of every DNS record, plus a standalone lookup so
+    // the tab works without running an Analyze first.
+
+    let recBoxes = []; // record texts backing the per-record Copy buttons
+
+    function recBox(value) {
+      const i = recBoxes.push(String(value)) - 1;
+      return '<div class="rec-wrap"><button class="copy rec-copy" type="button" data-ri="' + i + '">Copy</button>'
+        + '<div class="rec-box">' + esc(value) + '</div></div>';
+    }
+    const recHead = (label, cls, text, note) =>
+      '<div class="rec-head"><span class="z">' + label + '</span>'
+      + '<span class="rec-st ' + cls + '">' + esc(text) + '</span>'
+      + (note ? '<span class="mini">' + esc(note) + '</span>' : '') + '</div>';
+    const tag = (k, v) => (v == null || v === '' ? ''
+      : '<div class="tag"><div class="k">' + esc(k) + '</div><div class="v">' + esc(String(v)) + '</div></div>');
+
+    function renderAuthPane(domain, a, recs) {
+      recBoxes = [];
+      return '<div class="card">'
+        + '<div class="meta" style="margin:0 0 4px">Authentication health for <b>' + esc(domain)
+        + '</b>. Auth score <b>' + a.score + '/100</b></div>'
+        + renderAuth(a)
+        + renderAuthRecords(domain, a)
+        + renderDnsRecords(domain, a.records)
+        + renderAuthRecs(recs)
+        + '</div>';
+    }
+
+    function renderAuthRecords(domain, a) {
+      const spf = a.spf || {}, dkim = a.dkim || {}, dmarc = a.dmarc || {};
+      let h = '<h3>Authentication records, full details</h3>';
+
+      // SPF: the whole TXT record plus everything parsed out of it.
+      h += spf.present
+        ? recHead('SPF', spf.status === 'pass' ? 'ok' : 'warn', spf.status === 'pass' ? 'PASS' : 'WARN')
+        : recHead('SPF', 'bad', 'MISSING');
+      if (spf.present) {
+        h += '<div class="rec-name">' + esc(domain) + '&nbsp;&nbsp;IN&nbsp;&nbsp;TXT</div>' + recBox(spf.record);
+        h += '<div class="tag-grid">'
+          + tag('all qualifier', spf.qualifier ? spf.qualifier + 'all' : 'no all mechanism')
+          + tag('policy', spf.policy)
+          + tag('DNS lookups', spf.lookups != null ? spf.lookups + ' / 10' : null)
+          + '</div>';
+        if (spf.tooManyLookups) {
+          h += '<div class="warn-banner">More than 10 DNS lookups: receivers return a permerror and ignore this SPF record.</div>';
+        }
+      } else {
+        h += '<div class="mini">No v=spf1 TXT record was found on ' + esc(domain) + '.</div>';
+      }
+
+      // DKIM: every discovered selector with its full public-key record.
+      const sels = dkim.selectors || [];
+      h += recHead('DKIM', sels.length ? 'ok' : 'warn', sels.length ? 'PASS' : 'NOT FOUND',
+        sels.length ? sels.length + ' selector' + (sels.length > 1 ? 's' : '') + ' published' : (dkim.note || ''));
+      for (const s of sels) {
+        h += '<div class="rec-name">' + esc(s.name || (s.selector + '._domainkey.' + domain))
+          + '&nbsp;&nbsp;IN&nbsp;&nbsp;TXT <span class="pill">' + esc(s.keyType || 'rsa') + '</span></div>';
+        h += s.record ? recBox(s.record) : '<div class="mini">selector: ' + esc(s.selector) + '</div>';
+      }
+
+      // DMARC: the whole record plus each tag decoded.
+      h += dmarc.present
+        ? recHead('DMARC', dmarc.policy === 'reject' ? 'ok' : 'warn', dmarc.policy === 'reject' ? 'PASS' : 'WEAK')
+        : recHead('DMARC', 'bad', 'MISSING');
+      if (dmarc.present) {
+        h += '<div class="rec-name">_dmarc.' + esc(domain) + '&nbsp;&nbsp;IN&nbsp;&nbsp;TXT</div>' + recBox(dmarc.record);
+        h += '<div class="tag-grid">'
+          + tag('policy (p)', dmarc.policy)
+          + tag('subdomains (sp)', dmarc.subdomainPolicy || 'inherits p')
+          + tag('coverage (pct)', dmarc.pct != null ? dmarc.pct + '%' : null)
+          + tag('SPF alignment', dmarc.alignment ? (dmarc.alignment.spf === 's' ? 'strict' : 'relaxed') : null)
+          + tag('DKIM alignment', dmarc.alignment ? (dmarc.alignment.dkim === 's' ? 'strict' : 'relaxed') : null)
+          + tag('reports (rua)', dmarc.rua)
+          + tag('forensics (ruf)', dmarc.ruf)
+          + '</div>';
+      } else {
+        h += '<div class="mini">No v=DMARC1 record at _dmarc.' + esc(domain) + '.</div>';
+      }
+
+      // PTR: one row per IP, with the forward-confirmation result.
+      if (a.ptr && a.ptr.records && a.ptr.records.length) {
+        h += recHead('PTR / reverse DNS', a.ptr.status === 'pass' ? 'ok' : 'warn',
+          a.ptr.status === 'pass' ? 'VALID' : 'CHECK');
+        h += '<div class="table-scroll"><table class="dnsr"><thead><tr><th>IP</th><th>PTR host</th><th>Forward-confirmed</th></tr></thead><tbody>';
+        for (const p of a.ptr.records) {
+          h += '<tr><td class="val">' + esc(p.ip) + '</td><td class="val">' + esc(p.host || 'no PTR record') + '</td>'
+            + '<td class="' + (p.forwardConfirmed ? 'a-ok' : 'a-warn') + '">' + (p.forwardConfirmed ? 'yes' : 'no') + '</td></tr>';
+        }
+        h += '</tbody></table></div>';
+      }
+      return h;
+    }
+
+    // Every record set the server resolved (A, AAAA, CNAME, MX, NS, TXT, SOA,
+    // CAA) as one flat zone-file-style table.
+    function renderDnsRecords(domain, r) {
+      if (!r) return '';
+      const rows = [];
+      const row = (ty, val, ttl) => rows.push('<tr><td class="ty">' + ty + '</td><td class="val">' + esc(val)
+        + '</td><td class="ttl">' + (ttl != null ? ttl : '·') + '</td></tr>');
+      for (const x of r.a || []) row('A', x.address || x, x.ttl);
+      for (const x of r.aaaa || []) row('AAAA', x.address || x, x.ttl);
+      for (const x of r.cname || []) row('CNAME', x, null);
+      // An empty exchange is a null MX (RFC 7505): the domain declares it
+      // accepts no mail. Show the "." it stands for instead of a blank cell.
+      for (const x of r.mx || []) row('MX', x.priority + ' ' + (x.exchange || '. (null MX, accepts no mail)'), null);
+      for (const x of r.ns || []) row('NS', x, null);
+      for (const x of r.txt || []) row('TXT', x, null);
+      if (r.soa) {
+        row('SOA', r.soa.nsname + ' ' + r.soa.hostmaster + ' (serial ' + r.soa.serial + ', refresh ' + r.soa.refresh
+          + ', retry ' + r.soa.retry + ', expire ' + r.soa.expire + ', min TTL ' + r.soa.minttl + ')', null);
+      }
+      for (const x of r.caa || []) {
+        const t = x.issue != null ? 'issue "' + x.issue + '"'
+          : x.issuewild != null ? 'issuewild "' + x.issuewild + '"'
+          : x.iodef != null ? 'iodef "' + x.iodef + '"' : JSON.stringify(x);
+        row('CAA', (x.critical || 0) + ' ' + t, null);
+      }
+
+      let h = '<h3>All DNS records <span class="mini">' + esc(domain) + ' · ' + rows.length + ' record' + (rows.length === 1 ? '' : 's') + '</span></h3>';
+      if (!rows.length) h += '<div class="mini">No records found for this domain.</div>';
+      else h += '<div class="table-scroll"><table class="dnsr"><thead><tr><th>Type</th><th>Value</th><th style="text-align:right">TTL (s)</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
+      const errs = Object.entries(r.errors || {});
+      if (errs.length) {
+        h += '<div class="mini txt-warn" style="margin-top:6px">Some lookups failed: '
+          + errs.map(([k, v]) => esc(k.toUpperCase() + ' (' + v + ')')).join(' · ') + '</div>';
+      }
+      return h;
+    }
+
+    const authOutEl = document.getElementById('auth-out');
+    function paintAuthPane(html) {
+      authOutEl.innerHTML = html;
+      authOutEl.querySelectorAll('.rec-copy').forEach((btn) => btn.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(recBoxes[+btn.dataset.ri]); btn.textContent = 'Copied!'; }
+        catch { btn.textContent = 'Copy failed'; }
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+      }));
+    }
+
+    // Standalone lookup: /api/auth returns the same auth shape (records
+    // included), just without the blocklist run.
+    const authQEl = document.getElementById('auth-q');
+    const authGoEl = document.getElementById('auth-go');
+    document.getElementById('auth-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const domain = authQEl.value.trim();
+      if (!domain) return;
+      authGoEl.disabled = true;
+      authOutEl.innerHTML = '<div class="card"><span class="spinner"></span> Looking up SPF, DKIM, DMARC, MX, PTR and all DNS records for ' + esc(domain) + '.</div>';
+      try {
+        const res = await fetch('/api/auth?domain=' + encodeURIComponent(domain));
+        const d = await res.json();
+        if (!d.ok) { authOutEl.innerHTML = '<div class="card err">✗ ' + esc(d.error) + '</div>'; return; }
+        paintAuthPane(renderAuthPane(d.domain, d, null));
+      } catch (err) {
+        authOutEl.innerHTML = '<div class="card err">Request failed: ' + esc(err.message) + '</div>';
+      } finally {
+        authGoEl.disabled = false;
+      }
+    });
 
     // Only the authentication-related advice belongs on the Email auth tab.
     function renderAuthRecs(recs) {

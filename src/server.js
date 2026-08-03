@@ -23,6 +23,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // One shared resolver for the process (see resolve.js for DBC_RESOLVERS).
 const resolver = buildResolver();
+// A more patient resolver for auth / full-record lookups: big TXT answers
+// (SPF on large senders) are slow, and one retry rescues a flaky query.
+const authResolver = buildResolver(null, { timeout: 5000, tries: 2 });
 
 // Tiny in-memory cache so repeat lookups don't re-hammer the DNSBLs. In
 // production this becomes Redis with a 15-30 min TTL (plan §5.3). Caching is
@@ -155,6 +158,19 @@ export function buildServer() {
     trustProxy: process.env.DBC_TRUST_PROXY === 'true',
   });
 
+  // Baseline security headers on every response. The CSP allows inline
+  // script/style because the UI is a single self-contained index.html; it still
+  // blocks external script injection, framing and MIME sniffing.
+  app.addHook('onSend', async (_req, reply, payload) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'no-referrer');
+    reply.header('Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+      + "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
+    return payload;
+  });
+
   // Accept raw text / CSV bodies (paste a list or upload a .csv/.txt).
   const rawParser = (_req, body, done) => done(null, body);
   app.addContentTypeParser('text/plain', { parseAs: 'string' }, rawParser);
@@ -177,8 +193,14 @@ export function buildServer() {
 
   // Which blocklists can be trusted from THIS server, and why not (see
   // calibrate.js). ?refresh=1 re-runs the probes.
-  app.get('/api/calibration', async (req) => {
-    const cal = await getCalibration({ resolver, force: req.query.refresh === '1' });
+  app.get('/api/calibration', async (req, reply) => {
+    // A forced refresh probes every zone (hundreds of DNS queries), so it is
+    // charged like a bulk request; a cached read is cheap.
+    const force = req.query.refresh === '1';
+    if (limited(req, force ? 10 : 1)) {
+      return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
+    }
+    const cal = await getCalibration({ resolver, force });
     const byZone = new Map(ALL_ZONES.map((z) => [z.zone, z]));
     const zones = Object.entries(cal.zones).map(([zone, v]) => ({
       zone, name: byZone.get(zone)?.name || zone, trusted: isTrusted(v.verdict), ...v,
@@ -207,6 +229,10 @@ export function buildServer() {
     };
   });
 
+  // Only [a-z0-9.-] hostnames / IPs are ever embedded in a DNS query name, so
+  // arbitrary input can't be used to craft odd lookups via the delist routes.
+  const SUBJECT_RE = /^[a-z0-9.-]{1,253}$/i;
+
   // Start an assisted removal: check from DNS whether the sender meets what the
   // list requires, and hand back a prefilled removal URL.
   app.get('/api/delist/start', async (req, reply) => {
@@ -214,6 +240,9 @@ export function buildServer() {
     const subject = (req.query.subject || '').toString().trim().split(',')[0].trim();
     const domain = (req.query.domain || '').toString().trim() || null;
     if (!zone || !subject) return reply.code(400).send({ ok: false, error: 'zone and subject are required' });
+    if (!SUBJECT_RE.test(subject) || (domain && !SUBJECT_RE.test(domain))) {
+      return reply.code(400).send({ ok: false, error: 'invalid subject or domain' });
+    }
     if (!(await authOk(req, reply))) return;
     if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     const z = ALL_ZONES.find((x) => x.zone === zone);
@@ -226,6 +255,7 @@ export function buildServer() {
     const zone = (req.query.zone || '').toString().trim();
     const subject = (req.query.subject || '').toString().trim();
     if (!zone || !subject) return reply.code(400).send({ ok: false, error: 'zone and subject are required' });
+    if (!SUBJECT_RE.test(subject)) return reply.code(400).send({ ok: false, error: 'invalid subject' });
     if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     const listed = await stillListed(zone, subject, resolver);
     return { ok: true, zone, subject, listed, checkedAt: new Date().toISOString() };
@@ -250,7 +280,8 @@ export function buildServer() {
           : 'Send this as the X-API-Key header. No database is configured, so this key is kept in memory and is lost on restart. Set DATABASE_URL to persist keys.',
       };
     } catch (e) {
-      return reply.code(500).send({ ok: false, error: e.message });
+      const code = e.message === 'email already registered' ? 409 : 500;
+      return reply.code(code).send({ ok: false, error: e.message });
     }
   });
 
@@ -260,7 +291,8 @@ export function buildServer() {
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
     if (!(await authOk(req, reply))) return;
     if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
-    return analyzeDomain(domain, { resolver });
+    // Single-domain view: include the full DNS record sets for the auth tab.
+    return analyzeDomain(domain, { resolver, authResolver, withRecords: true });
   });
 
   // Authentication health only (SPF / DKIM / DMARC / MX / PTR).
@@ -276,13 +308,18 @@ export function buildServer() {
     if (!HOST_RE.test(host)) return reply.code(400).send({ ok: false, error: 'invalid domain' });
     const sel = req.query.selector ? req.query.selector.toString() : null;
     if (sel && !HOST_RE.test(sel)) return reply.code(400).send({ ok: false, error: 'invalid selector' });
-    return { ok: true, domain: host, ...(await checkAuth(host, { resolver, selectors: sel ? [sel] : undefined })) };
+    return {
+      ok: true,
+      domain: host,
+      ...(await checkAuth(host, { resolver: authResolver, selectors: sel ? [sel] : undefined, withRecords: true })),
+    };
   });
 
   // Check history for a domain. Only when a database is configured.
   app.get('/api/history', async (req, reply) => {
     if (!dbEnabled()) return reply.code(501).send({ ok: false, error: 'history requires DATABASE_URL' });
     if (!(await authOk(req, reply))) return;
+    if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     const domain = (req.query.domain || '').toString().trim();
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
     const limit = Math.min(Number(req.query.limit ?? 20), 100);

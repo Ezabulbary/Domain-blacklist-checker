@@ -23,12 +23,12 @@ export async function createApiKey({ email } = {}) {
       const u = await db.users.createUser({ email: mail, apiKey });
       return { apiKey: u.api_key, plan: u.plan, persisted: true };
     } catch {
-      // Email already exists. Rotate that user's key instead.
+      // The email is already registered. Rotating that user's key here would
+      // hand a valid key for the account to anyone who merely knows the email
+      // address, and would invalidate the real owner's key. Rotation must go
+      // through a flow that proves ownership (e.g. presenting the current key).
       const existing = await db.users.getUserByEmail(mail);
-      if (existing) {
-        const r = await db.users.rotateApiKey(existing.id, apiKey);
-        return { apiKey: r.api_key, plan: r.plan, persisted: true };
-      }
+      if (existing) throw new Error('email already registered');
       throw new Error('could not create API key');
     }
   }
