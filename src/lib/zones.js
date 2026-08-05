@@ -149,14 +149,27 @@ export const RETURN_CODES = {
 //   domain: example.com.<key>.dbl.dq.spamhaus.net
 //
 // Set DBC_DQS_KEY to enable. IMPORTANT: the key is a secret, so it only ever
-// lives in `queryHost` (used to build the DNS name). The public `zone` field, // which is returned by the API and shown in the UI. Keeps the plain name.
+// lives in `queryHost` (used to build the DNS name). The public `zone` field,
+// which is returned by the API and shown in the UI, keeps the plain name so the
+// key is never exposed.
 // ---------------------------------------------------------------------------
 const DQS_KEY = (process.env.DBC_DQS_KEY || '').trim();
 
+// Public-mirror zone -> DQS short name. These are the lists that already exist
+// in the catalog above; a key just re-points them at the authorized zone.
 const DQS_ZONES = {
   'zen.spamhaus.org': 'zen',
   'dbl.spamhaus.org': 'dbl',
 };
+
+// Zero Reputation Domains: brand-new / never-before-seen domains. A DQS-only
+// list (no public mirror), so it can only be added when a key is present. It is
+// a genuine cold-email signal (a domain with no history is a deliverability
+// risk), but a NEW domain is not the same as a SPAM domain, so it is opt-in via
+// DBC_DQS_ZRD and weighted as a medium signal, not a critical block. Its listing
+// space is 127.0.2.x (age buckets); only those codes count as a hit.
+const DQS_ZRD_ENABLED = DQS_KEY && process.env.DBC_DQS_ZRD === 'true';
+const ZRD_CODES = Array.from({ length: 23 }, (_, i) => `127.0.2.${i + 2}`); // .2 .. .24
 
 if (DQS_KEY) {
   for (const z of [...IP_ZONES, ...DOMAIN_ZONES]) {
@@ -167,6 +180,24 @@ if (DQS_KEY) {
     z.requiresKey = false;
     z.note = z.note.replace(/\s*, .*$/, '') + '. Via your Spamhaus DQS key.';
   }
+  if (DQS_ZRD_ENABLED) {
+    DOMAIN_ZONES.push({
+      name: 'Spamhaus ZRD',
+      zone: 'zrd.spamhaus.org', // stable public label; real query uses queryHost
+      queryHost: `${DQS_KEY}.zrd.dq.spamhaus.net`,
+      type: 'domain',
+      weight: 8,
+      severity: 'medium',
+      status: 'live',
+      note: 'Spamhaus Zero Reputation Domains: newly registered / never-before-seen domain. A no-history domain is a deliverability risk, not proof of spam. Via your Spamhaus DQS key.',
+      delist: 'https://check.spamhaus.org/',
+      listedCodes: ZRD_CODES,
+    });
+    RETURN_CODES['zrd.spamhaus.org'] = ZRD_CODES.reduce((m, c) => {
+      m[c] = 'recently registered / zero-reputation domain (age bucket ' + c.split('.').pop() + ')';
+      return m;
+    }, {});
+  }
 }
 
 /** Real DNS zone to query (may carry a secret key); never expose this. */
@@ -174,6 +205,16 @@ export const queryHostOf = (z) => z.queryHost || z.zone;
 
 /** True when a Spamhaus DQS key is configured. */
 export const dqsEnabled = () => Boolean(DQS_KEY);
+
+/**
+ * Public-safe summary of the DQS state, for /api/health and /api/zones so the
+ * UI can show that Spamhaus is really being queried (never the key itself).
+ */
+export const dqsStatus = () => ({
+  enabled: Boolean(DQS_KEY),
+  zrd: Boolean(DQS_ZRD_ENABLED),
+  lists: DQS_KEY ? [...Object.values(DQS_ZONES), ...(DQS_ZRD_ENABLED ? ['zrd'] : [])] : [],
+});
 
 // ---------------------------------------------------------------------------
 // Calibration metadata. How to PROVE a zone gives trustworthy answers.

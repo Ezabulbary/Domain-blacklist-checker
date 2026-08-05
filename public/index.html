@@ -274,6 +274,10 @@
     .tag .k { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
     .tag .v { font-size: 13px; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .dqs-badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; letter-spacing: .02em; vertical-align: 1px; }
+    .dqs-badge.ok { background: rgba(53,196,106,.15); color: var(--clean); }
+    .dqs-badge.warn { background: rgba(224,169,44,.15); color: var(--listed); }
     footer { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff;
       border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; }
@@ -390,11 +394,14 @@ mail.contoso.org"></textarea>
 
     // Real catalog size, read from the server so no count is ever hardcoded.
     let zoneCount = 0;
+    let dqs = { enabled: false, zrd: false, lists: [] };
     fetch('/api/zones').then((r) => r.json()).then((d) => {
       zoneCount = d.count || 0;
+      dqs = d.dqs || dqs;
       const el = document.getElementById('lists-hint');
       if (el && zoneCount) {
-        el.textContent = zoneCount + ' blocklists, SPF / DKIM / DMARC health, risk score, recommendations';
+        el.textContent = zoneCount + ' blocklists, SPF / DKIM / DMARC health, risk score, recommendations'
+          + (dqs.enabled ? ' · Spamhaus DQS active' : '');
       }
     }).catch(() => {});
     const scoreColor = (s) => (s >= 85 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)');
@@ -654,6 +661,32 @@ mail.contoso.org"></textarea>
         + '<text x="48" y="62" text-anchor="middle" class="g-lbl">RISK</text></svg>';
     }
 
+    // A small trust badge next to the blocklist count. Spamhaus (ZEN + DBL) is
+    // the single most important list; if it was skipped, the score is built
+    // without it and the user should know. A DQS key makes it work everywhere.
+    function dqsBadge(bl) {
+      const SPAMHAUS = ['zen.spamhaus.org', 'dbl.spamhaus.org'];
+      const rows = (bl.table || []).filter((r) => SPAMHAUS.includes(r.zone));
+      if (!rows.length) return '';
+      // If ANY Spamhaus list was skipped, the most important signal is missing
+      // from the score, so warn regardless of what the other list said. (A
+      // public-mirror "ok" without a key is the classic silent false-clean.)
+      const skipped = rows.some((r) => r.state === 'skipped');
+      // A genuine answer is listed or clean; a timeout is not proof of anything.
+      const realAnswer = rows.some((r) => r.state === 'listed' || r.state === 'ok');
+
+      if (dqs.enabled && !skipped && realAnswer) {
+        return ' <span class="dqs-badge ok" title="Spamhaus queried via your DQS key and included in this score">✓ Spamhaus DQS active'
+          + (dqs.zrd ? ' + ZRD' : '') + '</span>';
+      }
+      if (skipped) {
+        return dqs.enabled
+          ? ' <span class="dqs-badge warn" title="A DQS key is set but Spamhaus did not answer. Verify it with npm run calibrate">! Spamhaus DQS key not answering</span>'
+          : ' <span class="dqs-badge warn" title="Set DBC_DQS_KEY (free) to include Spamhaus in the score">! Spamhaus not checked, score is incomplete</span>';
+      }
+      return '';
+    }
+
     function renderAnalyze(d) {
       if (!d.ok) { sOut.innerHTML = '<div class="card err">✗ ' + esc(d.error) + '</div>'; return; }
       report = d;
@@ -677,7 +710,8 @@ mail.contoso.org"></textarea>
         + esc((d.resolvesTo || []).join(', ') || 'no IP address') + '</b></div>';
       h += '<div class="meta">Checked against <b>' + (bl.trustedZones ?? bl.zonesChecked) + '</b> of '
         + bl.zonesChecked + ' blocklists. '
-        + '<span class="mini">The other ' + (bl.skippedCount || 0) + ' cannot give a reliable answer from this server.</span></div>';
+        + '<span class="mini">The other ' + (bl.skippedCount || 0) + ' cannot give a reliable answer from this server.</span>'
+        + dqsBadge(bl) + '</div>';
       h += '<div class="meta">Listed <b class="txt-bad">' + bl.listedCount + '</b> · ' + bl.okCount + ' clean · '
         + '<b class="txt-warn">' + bl.timeoutCount + '</b> timeout'
         + (bl.skippedCount ? ' · ' + bl.skippedCount + ' skipped' : '')

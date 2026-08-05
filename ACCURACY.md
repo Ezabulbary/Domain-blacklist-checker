@@ -120,6 +120,18 @@ Spamhaus-i shobcheye important list. Key thakle **jekono network theke** kaj kor
 App nije-i DQS zone banay (`<key>.zen.dq.spamhaus.net`)। **Key ta secret thake, API/UI te kokhono dekha jay na** (test kora ache)। Key bhul hole calibration
 `blocked, DQS key rejected` dekhabe, chup kore mittha result debe **na**।
 
+**Kivabe bujhbe Spamhaus ashole check holo:** key set thakle Analyze tab e score
+er pashe sobuj **"✓ Spamhaus DQS active"** badge othe। Key na thakle, ar Spamhaus
+skip hole, **"! Spamhaus not checked, score is incomplete"** warning dekhay, mane
+oi score Spamhaus chhara toiri, purota bharosajogyo na। `/api/health` ar
+`/api/zones` er `dqs` field-eo ei obostha ache (key kokhono na diye)।
+
+**Optional ZRD (Zero Reputation Domains):** `DBC_DQS_ZRD=true` dile brand-new /
+kono-history-nei domain-o check hoy, cold-email domain vetting er jonno kaje
+lage। Notun domain ekta **risk signal**, spam er proman **na**, tai eta opt-in ar
+weight medium (score ke dhoshay na, sudhu janay)। ZRD er listing space `127.0.2.x`,
+sudhu oi code gulo-i hit hishebe gone hoy।
+
 ### 2. Nijer recursive resolver (Unbound), VPS thakle
 Public resolver er block (URIBL, kichu list) ese jabe na:
 ```

@@ -1,6 +1,6 @@
 {
   "name": "domain-blacklist-checker",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Check whether a domain (and its mail IPs) is listed on spam/malware DNSBLs, with weighted scoring and delisting guidance.",
   "type": "module",
   "main": "src/server.js",

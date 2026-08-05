@@ -15,7 +15,7 @@ import { getCalibration, isTrusted, summarize } from './lib/calibrate.js';
 import { removalGuide, KIND_LABEL } from './lib/removal.js';
 import { readiness, stillListed } from './lib/delist.js';
 import { buildResolver } from './lib/resolve.js';
-import { ALL_ZONES, CATEGORIES } from './lib/zones.js';
+import { ALL_ZONES, CATEGORIES, dqsStatus } from './lib/zones.js';
 import { dbEnabled } from './db/pool.js';
 import { db } from './db/index.js';
 
@@ -181,11 +181,12 @@ export function buildServer() {
     prefix: '/',
   });
 
-  app.get('/api/health', async () => ({ status: 'ok', zones: ALL_ZONES.length, db: dbEnabled() }));
+  app.get('/api/health', async () => ({ status: 'ok', zones: ALL_ZONES.length, db: dbEnabled(), dqs: dqsStatus() }));
 
   app.get('/api/zones', async () => ({
     count: ALL_ZONES.length,
     categories: CATEGORIES,
+    dqs: dqsStatus(),
     zones: ALL_ZONES.map(({ name, zone, type, category, weight, severity, status, note }) => ({
       name, zone, type, category, weight, severity, status, note,
     })),
