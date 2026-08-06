@@ -10,7 +10,8 @@ import { checkDomain } from './lib/check.js';
 import { checkMany, resultsToCsv } from './lib/bulk.js';
 import { analyzeDomain } from './lib/analyze.js';
 import { checkAuth } from './lib/auth.js';
-import { createApiKey, validateApiKey } from './lib/apikeys.js';
+import { createApiKey, validateApiKey, listApiKeys, revokeApiKey } from './lib/apikeys.js';
+import { SCOPES, ALL_SCOPE, hasScope, normalizeScopes } from './lib/scopes.js';
 import { getCalibration, isTrusted, summarize } from './lib/calibrate.js';
 import { removalGuide, KIND_LABEL } from './lib/removal.js';
 import { readiness, stillListed } from './lib/delist.js';
@@ -79,13 +80,15 @@ function rateLimited(id, cost = 1, max = RATE_MAX) {
 
 // Authenticate a request from its optional X-API-Key. Returns false and sends a
 // 401 when a key is invalid, or when DBC_REQUIRE_KEY is on and none was given.
-async function authOk(req, reply) {
+async function authOk(req, reply, scope) {
   const key = (req.headers['x-api-key'] || req.query.api_key || '').toString().trim();
   if (!key) {
     if (REQUIRE_KEY) {
       reply.code(401).send({ ok: false, error: 'API key required. Send it as the X-API-Key header' });
       return false;
     }
+    // Anonymous access is still allowed here. Scopes bound what a key may do,
+    // they do not grant more than an anonymous caller already has.
     return true;
   }
   const v = await validateApiKey(key);
@@ -93,8 +96,22 @@ async function authOk(req, reply) {
     reply.code(401).send({ ok: false, error: 'invalid API key' });
     return false;
   }
+  if (scope && !hasScope(v.scopes, scope)) {
+    // 403, not 401: the key is valid, it simply was not created for this.
+    reply.code(403).send({
+      ok: false,
+      error: `this API key is missing the "${scope}" scope`,
+      required: scope,
+      granted: v.scopes,
+      hint: `Create a key that includes "${scope}", or "${ALL_SCOPE}" for full access.`,
+    });
+    return false;
+  }
   req.apiKey = key;
   req.apiPlan = v.plan;
+  req.apiScopes = v.scopes;
+  req.apiKeyId = v.keyId;
+  req.apiUserId = v.userId ?? null;
   return true;
 }
 
@@ -167,17 +184,21 @@ export function buildServer() {
 
   app.get('/api/health', async () => ({ status: 'ok', zones: ALL_ZONES.length, db: dbEnabled() }));
 
-  app.get('/api/zones', async () => ({
+  app.get('/api/zones', async (req, reply) => {
+    if (!(await authOk(req, reply, 'zones:read'))) return;
+    return {
     count: ALL_ZONES.length,
     categories: CATEGORIES,
     zones: ALL_ZONES.map(({ name, zone, type, category, weight, severity, status, note }) => ({
       name, zone, type, category, weight, severity, status, note,
     })),
-  }));
+    };
+  });
 
   // Which blocklists can be trusted from THIS server, and why not (see
   // calibrate.js). ?refresh=1 re-runs the probes.
-  app.get('/api/calibration', async (req) => {
+  app.get('/api/calibration', async (req, reply) => {
+    if (!(await authOk(req, reply, 'zones:read'))) return;
     const cal = await getCalibration({ resolver, force: req.query.refresh === '1' });
     const byZone = new Map(ALL_ZONES.map((z) => [z.zone, z]));
     const zones = Object.entries(cal.zones).map(([zone, v]) => ({
@@ -196,6 +217,7 @@ export function buildServer() {
 
   // Step by step removal guidance for one listing.
   app.get('/api/removal', async (req, reply) => {
+    if (!(await authOk(req, reply, 'removal:read'))) return;
     const zone = (req.query.zone || '').toString().trim();
     const z = ALL_ZONES.find((x) => x.zone === zone);
     if (!z) return reply.code(404).send({ ok: false, error: 'unknown blocklist' });
@@ -210,11 +232,11 @@ export function buildServer() {
   // Start an assisted removal: check from DNS whether the sender meets what the
   // list requires, and hand back a prefilled removal URL.
   app.get('/api/delist/start', async (req, reply) => {
+    if (!(await authOk(req, reply, 'removal:read'))) return;
     const zone = (req.query.zone || '').toString().trim();
     const subject = (req.query.subject || '').toString().trim().split(',')[0].trim();
     const domain = (req.query.domain || '').toString().trim() || null;
     if (!zone || !subject) return reply.code(400).send({ ok: false, error: 'zone and subject are required' });
-    if (!(await authOk(req, reply))) return;
     if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     const z = ALL_ZONES.find((x) => x.zone === zone);
     if (!z) return reply.code(404).send({ ok: false, error: 'unknown blocklist' });
@@ -223,6 +245,7 @@ export function buildServer() {
 
   // Poll after submitting: has the entry actually gone?
   app.get('/api/delist/status', async (req, reply) => {
+    if (!(await authOk(req, reply, 'removal:read'))) return;
     const zone = (req.query.zone || '').toString().trim();
     const subject = (req.query.subject || '').toString().trim();
     if (!zone || !subject) return reply.code(400).send({ ok: false, error: 'zone and subject are required' });
@@ -231,34 +254,75 @@ export function buildServer() {
     return { ok: true, zone, subject, listed, checkedAt: new Date().toISOString() };
   });
 
-  // Generate a new API key. Optional { email } ties it to a user record.
+  // The scope catalog, so the create form and the docs stay in step with the
+  // server rather than drifting from a hardcoded copy.
+  app.get('/api/scopes', async () => ({
+    ok: true,
+    all: ALL_SCOPE,
+    scopes: SCOPES,
+  }));
+
+  // Create an API key. Body: { name, scopes: [...], email? }
+  // The key is returned exactly once and is never stored, only its hash.
   app.post('/api/keys', async (req, reply) => {
     if (rateLimited(req.ip, 5)) {
       return reply.code(429).send({ ok: false, error: 'too many key requests, slow down' });
     }
-    const email = req.body && typeof req.body === 'object' ? req.body.email : undefined;
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 120) : '';
+    if (!name) return reply.code(400).send({ ok: false, error: 'name is required' });
+
+    // Reject an unknown scope rather than quietly issuing a key with less access
+    // than was asked for. Silently dropping a scope produces a key that fails
+    // later, somewhere else, for reasons nobody can see.
+    const { scopes, invalid } = normalizeScopes(body.scopes ?? [ALL_SCOPE]);
+    if (invalid.length) {
+      return reply.code(400).send({
+        ok: false,
+        error: `unknown scope: ${invalid.join(', ')}`,
+        valid: [ALL_SCOPE, ...SCOPES.map((x) => x.key)],
+      });
+    }
+    if (!scopes.length) return reply.code(400).send({ ok: false, error: 'select at least one scope' });
+
     try {
-      const r = await createApiKey({ email });
+      const r = await createApiKey({ name, scopes, email: body.email });
       return {
         ok: true,
         apiKey: r.apiKey,
-        plan: r.plan,
+        key: r.key,
         persisted: r.persisted,
         requireKey: REQUIRE_KEY,
         note: r.persisted
-          ? 'Send this as the X-API-Key header.'
-          : 'Send this as the X-API-Key header. No database is configured, so this key is kept in memory and is lost on restart. Set DATABASE_URL to persist keys.',
+          ? 'Copy this key now. It is stored only as a hash and cannot be shown again.'
+          : 'Copy this key now. It cannot be shown again, and with no DATABASE_URL configured it is held in memory and lost on restart.',
       };
     } catch (e) {
       return reply.code(500).send({ ok: false, error: e.message });
     }
   });
 
+  // List keys. Never returns a key, only its prefix and what it can do.
+  app.get('/api/keys', async (req, reply) => {
+    if (!(await authOk(req, reply, 'keys:write'))) return;
+    if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
+    return { ok: true, keys: await listApiKeys(req.apiUserId ?? null) };
+  });
+
+  // Revoke a key. Revoked rather than deleted, so the audit trail survives.
+  app.delete('/api/keys/:id', async (req, reply) => {
+    if (!(await authOk(req, reply, 'keys:write'))) return;
+    if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
+    const row = await revokeApiKey(req.params.id);
+    if (!row) return reply.code(404).send({ ok: false, error: 'key not found, or already revoked' });
+    return { ok: true, key: row };
+  });
+
   // Unified deliverability report (blacklists + auth + risk + recommendations).
   app.get('/api/analyze', async (req, reply) => {
     const domain = (req.query.domain || '').toString();
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
-    if (!(await authOk(req, reply))) return;
+    if (!(await authOk(req, reply, 'analyze:read'))) return;
     if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     return analyzeDomain(domain, { resolver });
   });
@@ -267,7 +331,7 @@ export function buildServer() {
   app.get('/api/auth', async (req, reply) => {
     const domain = (req.query.domain || '').toString().trim();
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
-    if (!(await authOk(req, reply))) return;
+    if (!(await authOk(req, reply, 'auth:read'))) return;
     if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     // Guard: only [a-z0-9.-] hostnames / selectors are ever embedded in a DNS
     // name, so arbitrary input can't be used to craft odd lookups.
@@ -281,8 +345,11 @@ export function buildServer() {
 
   // Check history for a domain. Only when a database is configured.
   app.get('/api/history', async (req, reply) => {
+    // Authorize before saying anything about this endpoint's state. Answering
+    // "not implemented" to a key that was never allowed here tells an
+    // unauthorized caller about the deployment.
+    if (!(await authOk(req, reply, 'history:read'))) return;
     if (!dbEnabled()) return reply.code(501).send({ ok: false, error: 'history requires DATABASE_URL' });
-    if (!(await authOk(req, reply))) return;
     const domain = (req.query.domain || '').toString().trim();
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
     const limit = Math.min(Number(req.query.limit ?? 20), 100);
@@ -293,7 +360,7 @@ export function buildServer() {
   app.get('/api/check', async (req, reply) => {
     const domain = (req.query.domain || '').toString();
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
-    if (!(await authOk(req, reply))) return;
+    if (!(await authOk(req, reply, 'check:read'))) return;
     if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     return checkCached(domain, { resolver });
   });
@@ -321,7 +388,7 @@ export function buildServer() {
     if (inputs.length === 0) {
       return reply.code(400).send({ ok: false, error: 'no domains found in request' });
     }
-    if (!(await authOk(req, reply))) return;
+    if (!(await authOk(req, reply, 'bulk:write'))) return;
 
     // Charge the rate limiter in proportion to the work (each domain fans out
     // to ~100 DNS queries) so bulk can't be used to amplify load. The cost is

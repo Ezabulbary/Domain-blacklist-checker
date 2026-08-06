@@ -9,5 +9,6 @@ import * as domains from './repositories/domains.js';
 import * as checks from './repositories/checks.js';
 import * as monitors from './repositories/monitors.js';
 import * as alerts from './repositories/alerts.js';
+import * as apikeys from './repositories/apikeys.js';
 
-export const db = { users, domains, checks, monitors, alerts };
+export const db = { users, domains, checks, monitors, alerts, apikeys };

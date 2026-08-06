@@ -1,48 +1,125 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { dbEnabled } from '../db/pool.js';
 import { db } from '../db/index.js';
+import { normalizeScopes, ALL_SCOPE } from './scopes.js';
 
-// API keys are OPTIONAL by default. The API works without one. A key lets you
-// authenticate (for higher rate limits / attribution), and the server can be
-// told to require one with DBC_REQUIRE_KEY=true.
+// API keys are OPTIONAL by default. The API works without one. A key
+// authenticates you (higher rate limit, attribution) and carries scopes that
+// bound what it can reach. The server can demand one with DBC_REQUIRE_KEY=true.
 //
-// When a database is configured, keys live in the `users` table (persistent).
-// Without a database we keep them in memory so the feature still works for a
-// demo. But those keys are lost on restart.
-
-const mem = new Map(); // apiKey -> { plan, createdAt }
+// The key is shown once, at creation, and never stored. What is stored is a
+// SHA-256 hash plus a short non-secret prefix for display, so a database that
+// leaks yields no usable keys.
+//
+// Without a database, keys live in memory so the feature still works for a demo
+// and for tests. Those are lost on restart, and the API says so.
 
 export const newKey = () => 'dbc_' + randomBytes(24).toString('hex');
 
-/** Create and store a new API key. Optional email ties it to a user record. */
-export async function createApiKey({ email } = {}) {
+const hash = (key) => createHash('sha256').update(String(key)).digest('hex');
+// Enough to recognise a key in a list, not enough to use it.
+const prefixOf = (key) => key.slice(0, 12);
+
+const mem = new Map(); // keyHash -> { id, name, scopes, prefix, createdAt, revokedAt }
+let memId = 0;
+
+const publicRow = (r) => ({
+  id: r.id,
+  name: r.name,
+  prefix: r.key_prefix ?? r.prefix,
+  scopes: r.scopes,
+  createdAt: r.created_at ?? r.createdAt,
+  lastUsedAt: r.last_used_at ?? r.lastUsedAt ?? null,
+  revokedAt: r.revoked_at ?? r.revokedAt ?? null,
+});
+
+/**
+ * Create a key.
+ *
+ * @param {object} opts
+ *   name    what the key is for. Required in spirit, defaulted if absent.
+ *   scopes  array of scope strings, or ['all:all']. Defaults to all:all so the
+ *           old zero-argument call keeps its meaning.
+ *   email   optional, ties the key to a user record.
+ * @returns { apiKey, key: {...}, persisted, invalidScopes }
+ */
+export async function createApiKey({ name, scopes, email } = {}) {
   const apiKey = newKey();
+  const keyHash = hash(apiKey);
+  const keyPrefix = prefixOf(apiKey);
+  const label = (name && String(name).trim()) || 'Unnamed key';
+
+  const { scopes: clean, invalid } = normalizeScopes(scopes ?? [ALL_SCOPE]);
+  // A key with no scopes could not call anything, which is never what someone
+  // meant to build. Treat an empty selection as the default rather than
+  // creating a key that is dead on arrival.
+  const granted = clean.length ? clean : [ALL_SCOPE];
+
   if (dbEnabled()) {
-    const mail = email && String(email).trim() ? String(email).trim() : `key_${apiKey.slice(4, 16)}@local.key`;
-    try {
-      const u = await db.users.createUser({ email: mail, apiKey });
-      return { apiKey: u.api_key, plan: u.plan, persisted: true };
-    } catch {
-      // Email already exists. Rotate that user's key instead.
-      const existing = await db.users.getUserByEmail(mail);
-      if (existing) {
-        const r = await db.users.rotateApiKey(existing.id, apiKey);
-        return { apiKey: r.api_key, plan: r.plan, persisted: true };
-      }
-      throw new Error('could not create API key');
+    let userId = null;
+    if (email && String(email).trim()) {
+      const u = await db.users.upsertUserByEmail({ email: String(email).trim() });
+      userId = u?.id ?? null;
     }
+    const row = await db.apikeys.createKey({ userId, name: label, keyHash, keyPrefix, scopes: granted });
+    return { apiKey, key: publicRow(row), persisted: true, invalidScopes: invalid };
   }
-  mem.set(apiKey, { plan: 'free', createdAt: Date.now() });
-  return { apiKey, plan: 'free', persisted: false };
+
+  const row = { id: ++memId, name: label, prefix: keyPrefix, scopes: granted, createdAt: new Date().toISOString(), revokedAt: null };
+  mem.set(keyHash, row);
+  return { apiKey, key: publicRow(row), persisted: false, invalidScopes: invalid };
 }
 
-/** Validate a key. Returns { plan, ... } if valid, else null. */
+/**
+ * Validate a presented key.
+ * @returns { scopes, keyId, name, plan, userId? } or null.
+ */
 export async function validateApiKey(apiKey) {
-  if (!apiKey) return null;
+  if (!apiKey || typeof apiKey !== 'string') return null;
+  const keyHash = hash(apiKey);
+
   if (dbEnabled()) {
+    const row = await db.apikeys.getByHash(keyHash);
+    if (row) {
+      // Best effort. A slow write here would tax every authenticated request.
+      db.apikeys.touch(row.id).catch(() => {});
+      return { scopes: row.scopes, keyId: row.id, name: row.name, userId: row.user_id, plan: 'free' };
+    }
+    // Legacy: a key issued before scopes existed, stored plainly on the user
+    // row. Still honoured, with full access, so upgrading breaks nobody.
     const u = await db.users.getUserByApiKey(apiKey);
-    return u ? { plan: u.plan, userId: u.id, email: u.email } : null;
+    if (u) return { scopes: [ALL_SCOPE], keyId: null, name: 'legacy key', userId: u.id, plan: u.plan, legacy: true };
+    return null;
   }
-  const m = mem.get(apiKey);
-  return m ? { plan: m.plan } : null;
+
+  const m = mem.get(keyHash);
+  if (!m || m.revokedAt) return null;
+  return { scopes: m.scopes, keyId: m.id, name: m.name, plan: 'free' };
+}
+
+export async function listApiKeys(userId = null) {
+  if (dbEnabled()) return (await db.apikeys.listKeys(userId)).map(publicRow);
+  return [...mem.values()].map(publicRow);
+}
+
+export async function revokeApiKey(id) {
+  if (dbEnabled()) {
+    const row = await db.apikeys.revokeKey(id);
+    return row ? publicRow(row) : null;
+  }
+  for (const [h, r] of mem) {
+    if (String(r.id) === String(id) && !r.revokedAt) {
+      r.revokedAt = new Date().toISOString();
+      mem.set(h, r);
+      return publicRow(r);
+    }
+  }
+  return null;
+}
+
+/** Constant-time compare, for anywhere a secret is checked directly. */
+export function safeEqual(a, b) {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && timingSafeEqual(x, y);
 }
