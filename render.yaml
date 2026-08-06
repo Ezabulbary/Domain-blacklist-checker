@@ -20,9 +20,13 @@ services:
       #   zen.spamhaus.org  ->  <key>.zen.dq.spamhaus.net
       - key: DBC_DQS_KEY
         sync: false   # set manually in Render dashboard (keep key secret)
-      # Enable key-required zones (Spamhaus ZEN, DBL, etc.) once DQS is set.
+      # Trust "listed" answers from OTHER key-required lists (Barracuda, Abusix,
+      # invaluement, SpamRats, Sender Score). Keep this "false" unless you have
+      # paid/authorized access to those lists: without it they often answer
+      # "listed" to everyone, which creates FALSE listings. Spamhaus does NOT
+      # need this. The DQS key above already authorizes ZEN + DBL on its own.
       - key: DBC_TRUST_KEYED
-        value: "true"
+        value: "false"
       # Trust X-Forwarded-For from Render's edge proxy for accurate rate limiting.
       - key: DBC_TRUST_PROXY
         value: "true"

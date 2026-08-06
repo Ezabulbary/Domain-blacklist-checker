@@ -267,7 +267,17 @@ export function buildServer() {
     if (rateLimited(req.ip, 5)) {
       return reply.code(429).send({ ok: false, error: 'too many key requests, slow down' });
     }
-    const email = req.body && typeof req.body === 'object' ? req.body.email : undefined;
+    let email = req.body && typeof req.body === 'object' ? req.body.email : undefined;
+    // Optional field, but when present it must look like an email and fit the
+    // column. Otherwise arbitrary strings become user rows in the database.
+    if (email !== undefined && email !== null && email !== '') {
+      email = String(email).trim();
+      if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return reply.code(400).send({ ok: false, error: 'invalid email' });
+      }
+    } else {
+      email = undefined;
+    }
     try {
       const r = await createApiKey({ email });
       return {
@@ -323,7 +333,10 @@ export function buildServer() {
     if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
     const domain = (req.query.domain || '').toString().trim();
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
-    const limit = Math.min(Number(req.query.limit ?? 20), 100);
+    // Clamp to a sane integer: a non-numeric or negative ?limit must not reach
+    // the database as NaN (Postgres rejects it and the request would 500).
+    const parsed = Number(req.query.limit ?? 20);
+    const limit = Number.isFinite(parsed) ? Math.min(Math.max(Math.floor(parsed), 1), 100) : 20;
     const rows = await db.checks.listChecksForDomain(domain, { limit });
     return { ok: true, domain: domain.toLowerCase(), count: rows.length, checks: rows };
   });
