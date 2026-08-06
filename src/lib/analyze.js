@@ -9,9 +9,7 @@ import { buildResolver } from './resolve.js';
  * plus recommendations and a placeholder for ESP-sourced signals.
  *
  * @param {string} input  domain or IP
- * @param {object} [opts] { resolver, signals, withRecords }
- *                        (signals = ESP metrics; withRecords includes the full
- *                        DNS record set under auth.records; see checkAuth)
+ * @param {object} [opts] { resolver, signals }  (signals = ESP metrics, if any)
  */
 export async function analyzeDomain(input, opts = {}) {
   const resolver = opts.resolver || buildResolver();
@@ -23,17 +21,10 @@ export async function analyzeDomain(input, opts = {}) {
   });
   if (!bl.ok) return { ok: false, input, error: bl.error };
 
-  // Auth only makes sense for a domain (not a bare IP literal). Auth TXT
-  // lookups want a patient resolver (5s, 2 tries), not the DNSBL-tuned one, so
-  // a caller can pass a dedicated `authResolver`; otherwise the shared one is
-  // reused (checkAuth builds its own patient resolver only when none is given).
+  // Auth only makes sense for a domain (not a bare IP literal).
   const auth = bl.isIp
     ? null
-    : await checkAuth(bl.domain, {
-        resolver: opts.authResolver || resolver,
-        ips: bl.resolvesTo,
-        withRecords: opts.withRecords,
-      });
+    : await checkAuth(bl.domain, { resolver, ips: bl.resolvesTo });
 
   const risk = riskScore({ bl, auth });
   const recommendations = recommend({ auth, table: bl.table });
@@ -54,18 +45,24 @@ export async function analyzeDomain(input, opts = {}) {
     auth: auth
       ? {
           score: auth.score,
+          complete: auth.complete,
           spf: auth.spf,
           dkim: auth.dkim,
           dmarc: auth.dmarc,
           mx: auth.mx,
           ptr: auth.ptr,
-          records: auth.records || null,
         }
       : null,
 
     blacklist: {
       score: bl.score,
       verdict: bl.verdict,
+      // How much the score is actually built on. Alerting should hold off on a
+      // low-confidence result rather than message a client about a number that
+      // moved because the network was slow.
+      confidence: bl.confidence,
+      answeredZones: bl.answeredZones,
+      coverage: bl.coverage,
       zonesChecked: bl.zonesChecked,
       trustedZones: bl.trustedZones,
       listedCount: bl.listedCount,
@@ -92,11 +89,23 @@ export async function analyzeDomain(input, opts = {}) {
  * risk score. Blacklist reputation is weighted a bit heavier than auth.
  */
 export function riskScore({ bl, auth }) {
-  const blScore = bl.score ?? 100;
-  const authS = auth ? auth.score : 100;
-  const score = Math.round(blScore * 0.6 + authS * 0.4);
+  // Either half can be genuinely unmeasurable: no blocklist answered, or the
+  // subject is a bare IP with no domain to authenticate. Substituting 100 for a
+  // missing half, which is what this used to do, invents a perfect result out
+  // of an absence of data. Instead the present halves are reweighted, and if
+  // neither could be measured there is no score to report.
+  const blScore = typeof bl?.score === 'number' ? bl.score : null;
+  const authS = typeof auth?.score === 'number' ? auth.score : null;
+
+  let score;
+  if (blScore === null && authS === null) score = null;
+  else if (authS === null) score = Math.round(blScore);
+  else if (blScore === null) score = Math.round(authS);
+  else score = Math.round(blScore * 0.6 + authS * 0.4);
+
   let standing = 'good standing';
-  if (score < 50) standing = 'poor';
+  if (score === null) standing = 'not measured';
+  else if (score < 50) standing = 'poor';
   else if (score < 80) standing = 'at risk';
   return { score, standing };
 }

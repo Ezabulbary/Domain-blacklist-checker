@@ -26,7 +26,7 @@ console.log(
   `\n${badge}, ${r.domain}  resolves to ${r.resolvesTo.join(', ') || 'no IP'}`,
 );
 console.log(
-  `Checked against ${r.zonesChecked} blacklists. Listed ${r.listedCount}, ${r.timeoutCount} timeout/unknown  ·  score ${r.score}/100  (${r.tookMs}ms)\n`,
+  `Checked against ${r.zonesChecked} blacklists. Listed ${r.listedCount}, ${r.timeoutCount} timeout/unknown  ·  score ${typeof r.score === 'number' ? r.score + '/100' : 'not measured'}  (${r.tookMs}ms)\n`,
 );
 
 const icon = { listed: '✗', ok: '✓', timeout: '?' };

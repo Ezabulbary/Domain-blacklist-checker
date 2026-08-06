@@ -14,13 +14,8 @@ const flat = (txt) => (Array.isArray(txt) ? txt.join('') : String(txt));
  * Full authentication health for a domain: SPF, DKIM, DMARC, MX and PTR, all
  * from live DNS. Returns a structured object plus a 0-100 auth score.
  *
- * With `withRecords: true` the full DNS record sets (A, AAAA, CNAME, MX, NS,
- * TXT, SOA, CAA) are included under `records`. That costs ~7 extra queries per
- * domain, so it is opt-in: single-domain views want it, a 500-domain bulk run
- * does not.
- *
  * @param {string} domain      registrable / mail domain
- * @param {object} [opts]      { resolver, ips, selectors, withRecords }
+ * @param {object} [opts]      { resolver, ips, selectors }
  */
 export async function checkAuth(domain, opts = {}) {
   // Auth TXT records (especially SPF on big senders) can be large and slow, so
@@ -28,46 +23,20 @@ export async function checkAuth(domain, opts = {}) {
   const resolver = opts.resolver || buildResolver(null, { timeout: 5000, tries: 2 });
   const selectors = opts.selectors || COMMON_SELECTORS;
 
-  const [spf, dmarc, mx, dkim, ptr, records] = await Promise.all([
+  const [spf, dmarc, mx, dkim, ptr] = await Promise.all([
     checkSpf(domain, resolver),
     checkDmarc(domain, resolver),
     checkMx(domain, resolver),
     checkDkim(domain, selectors, resolver),
     opts.ips && opts.ips.length ? checkPtr(opts.ips, domain, resolver) : Promise.resolve(null),
-    opts.withRecords ? lookupDnsRecords(domain, resolver) : Promise.resolve(null),
   ]);
 
   const score = authScore({ spf, dkim, dmarc, ptr });
-  return { spf, dkim, dmarc, mx, ptr, score, records };
-}
-
-/**
- * The complete DNS record set for a domain, one lookup per type. Every lookup
- * fails independently: a missing type is just empty, and only unexpected
- * failures (not ENOTFOUND/ENODATA) land in `errors`, so one dead type never
- * hides the rest.
- */
-export async function lookupDnsRecords(domain, resolver) {
-  const out = { a: [], aaaa: [], cname: [], mx: [], ns: [], txt: [], soa: null, caa: [], errors: {} };
-  const grab = async (key, fn, map) => {
-    try {
-      const v = await fn();
-      out[key] = map ? map(v) : v;
-    } catch (e) {
-      if (e.code !== 'ENOTFOUND' && e.code !== 'ENODATA') out.errors[key] = e.code || 'error';
-    }
-  };
-  await Promise.all([
-    grab('a', () => resolver.resolve4(domain, { ttl: true })),
-    grab('aaaa', () => resolver.resolve6(domain, { ttl: true })),
-    grab('cname', () => resolver.resolveCname(domain)),
-    grab('mx', () => resolver.resolveMx(domain), (v) => [...v].sort((x, y) => x.priority - y.priority)),
-    grab('ns', () => resolver.resolveNs(domain), (v) => [...v].sort()),
-    grab('txt', () => resolver.resolveTxt(domain), (v) => v.map(flat)),
-    grab('soa', () => resolver.resolveSoa(domain)),
-    grab('caa', () => resolver.resolveCaa(domain)),
-  ]);
-  return out;
+  // A lookup that failed is not the same as a record that is absent. When any
+  // component came back 'unknown' the score is built on incomplete data, so say
+  // so rather than let a DNS failure read as "this domain has no SPF".
+  const complete = ![spf, dmarc, mx].some((x) => x && x.status === 'unknown');
+  return { spf, dkim, dmarc, mx, ptr, score, complete };
 }
 
 /** SPF: find the v=spf1 record, read the all-qualifier, count DNS lookups. */
@@ -139,12 +108,7 @@ export async function checkDkim(domain, selectors, resolver) {
       try {
         const txt = (await resolver.resolveTxt(`${sel}._domainkey.${domain}`)).map(flat).join('');
         if (/v=DKIM1|k=rsa|p=[A-Za-z0-9]/i.test(txt)) {
-          found.push({
-            selector: sel,
-            keyType: (txt.match(/k=([a-z0-9]+)/i) || [])[1] || 'rsa',
-            name: `${sel}._domainkey.${domain}`,
-            record: txt,
-          });
+          found.push({ selector: sel, keyType: (txt.match(/k=([a-z0-9]+)/i) || [])[1] || 'rsa' });
         }
       } catch {
         /* selector not published. Normal */
@@ -201,17 +165,51 @@ export async function checkPtr(ips, domain, resolver) {
   return { present: results.some((r) => r.host), status: valid ? 'pass' : 'warn', records: results };
 }
 
-/** Weighted 0-100 authentication score. */
+/**
+ * Weighted 0-100 authentication score.
+ *
+ * Each component is scored out of its own maximum, and the total is rescaled
+ * over the components we could actually check. A lookup that failed is dropped
+ * from both sides rather than scored as zero: a DNS timeout is not evidence
+ * that a domain has no SPF record, and scoring it as though it were would make
+ * the score fall by 30 points for a network hiccup. On a schedule that is a
+ * false "your authentication got worse" alert twice a day.
+ *
+ * Same reasoning for PTR: when there are no IPs to check it leaves the
+ * calculation instead of contributing free points it never earned.
+ */
 export function authScore({ spf, dkim, dmarc, ptr }) {
-  let s = 0;
-  // SPF up to 30
-  if (spf?.present) s += spf.status === 'pass' ? 30 : 18;
-  // DKIM up to 25
-  if (dkim?.present) s += 25;
-  // DMARC up to 35 (reject > quarantine > none)
-  if (dmarc?.present) s += dmarc.policy === 'reject' ? 35 : dmarc.policy === 'quarantine' ? 24 : 12;
-  // PTR up to 10 (only when we had IPs to check)
-  if (ptr) s += ptr.status === 'pass' ? 10 : 4;
-  else s += 10; // no IPs to penalize (domain-only check)
-  return Math.min(100, Math.round(s));
+  let earned = 0;
+  let possible = 0;
+  const known = (rec) => rec && rec.status !== 'unknown';
+
+  // SPF, up to 30. A record that exists but ends in +all or blows the lookup
+  // limit still counts for most of it: weak beats absent.
+  if (known(spf)) {
+    possible += 30;
+    if (spf.present) earned += spf.status === 'pass' ? 30 : 18;
+  }
+
+  // DKIM, up to 25. 'unknown' here means no key answered for the selectors we
+  // probed, which is a real finding rather than a failed lookup, so unlike the
+  // others it is scored. Pass real selectors via opts.selectors to be sure.
+  if (dkim) {
+    possible += 25;
+    if (dkim.present) earned += 25;
+  }
+
+  // DMARC, up to 35. reject > quarantine > none.
+  if (known(dmarc)) {
+    possible += 35;
+    if (dmarc.present) earned += dmarc.policy === 'reject' ? 35 : dmarc.policy === 'quarantine' ? 24 : 12;
+  }
+
+  // PTR, up to 10, only when there were IPs to check.
+  if (known(ptr)) {
+    possible += 10;
+    earned += ptr.status === 'pass' ? 10 : 4;
+  }
+
+  if (possible === 0) return null;
+  return Math.min(100, Math.round((earned / possible) * 100));
 }

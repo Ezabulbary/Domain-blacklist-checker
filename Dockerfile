@@ -3,9 +3,8 @@
 #   docker build -t blacklist-checker .
 #   docker run -p 3000:3000 -e DBC_RESOLVERS=1.1.1.1 blacklist-checker
 #
-# For accurate Spamhaus results set DBC_DQS_KEY (free key, see .env.example).
-# Only set DBC_TRUST_KEYED=true if you have paid/authorized access to the other
-# key-required lists (Barracuda, Abusix, invaluement); otherwise leave it off.
+# For accurate results on key-required lists, point DBC_RESOLVERS at your own
+# recursive resolver and set DBC_TRUST_KEYED=true (see SHARING.md / README).
 FROM node:22-alpine
 
 WORKDIR /app
@@ -14,18 +13,13 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
-# App source. Owned by the unprivileged user so the app can write its
-# calibration cache (.calibration.json) but nothing outside /app.
-COPY --chown=node:node src ./src
-COPY --chown=node:node public ./public
-RUN chown node:node /app
+# App source.
+COPY src ./src
+COPY public ./public
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=3000
 EXPOSE 3000
-
-# Never run the server as root. The stock node image ships a "node" user.
-USER node
 
 CMD ["node", "src/server.js"]

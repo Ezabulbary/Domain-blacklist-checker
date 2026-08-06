@@ -69,7 +69,8 @@ for (const r of results) {
   const auth = r.auth
     ? `SPF:${r.auth.spf.padEnd(7)} DKIM:${r.auth.dkim.padEnd(4)} DMARC:${r.auth.dmarc.padEnd(7)} `
     : '';
-  console.log(`  ${b} ${r.domain.padEnd(28)} ${String(r.score).padStart(3)}/100 ${auth}${r.verdict.padEnd(10)} ${listed}`);
+  const score = typeof r.score === 'number' ? String(r.score).padStart(3) + '/100' : '     n/a';
+  console.log(`  ${b} ${r.domain.padEnd(28)} ${score} ${auth}${r.verdict.padEnd(10)} ${listed}`);
 }
 
 console.log(

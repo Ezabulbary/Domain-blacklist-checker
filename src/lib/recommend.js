@@ -23,8 +23,13 @@ export function recommend({ auth, table = [] } = {}) {
     });
   }
 
+  // A lookup that failed tells us nothing. Recommending "publish an SPF record"
+  // to someone who already has one, because a DNS query timed out, is worse
+  // than staying quiet.
+  const known = (rec) => rec && rec.status !== 'unknown';
+
   // --- SPF ---
-  if (auth?.spf) {
+  if (known(auth?.spf)) {
     if (!auth.spf.present) {
       add({ severity: 'high', area: 'spf', title: 'No SPF record', detail: 'Publish an SPF TXT record so receivers can validate which hosts may send for your domain.', action: { label: 'SPF syntax', url: 'https://www.rfc-editor.org/rfc/rfc7208' } });
     } else {
@@ -38,12 +43,14 @@ export function recommend({ auth, table = [] } = {}) {
   }
 
   // --- DKIM ---
+  // DKIM 'unknown' means "no key found for the common selectors", which is a
+  // real finding, not a failed lookup, so it stays reportable.
   if (auth?.dkim && !auth.dkim.present) {
     add({ severity: 'high', area: 'dkim', title: 'No DKIM key found', detail: 'No DKIM key was found for common selectors. Publish DKIM and sign outbound mail (provide your real selector to confirm).' });
   }
 
   // --- DMARC ---
-  if (auth?.dmarc) {
+  if (known(auth?.dmarc)) {
     if (!auth.dmarc.present) {
       add({ severity: 'high', area: 'dmarc', title: 'No DMARC record', detail: 'Publish a _dmarc TXT record (start with p=none + rua to monitor, then tighten).', action: { label: 'DMARC guide', url: 'https://dmarc.org/overview/' } });
     } else if (auth.dmarc.policy === 'none') {

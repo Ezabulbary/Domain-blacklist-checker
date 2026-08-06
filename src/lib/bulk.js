@@ -111,18 +111,32 @@ async function auditDomain(input, opts = {}) {
     // Every field is read defensively. A failed lookup returns a partial record
     // (status 'unknown'), and across a few hundred domains that is a certainty,
     // not an edge case.
+    // A record we could not look up is reported as 'unknown', never as
+    // 'missing'. Telling a client "you have no SPF" because a DNS query timed
+    // out is the same mistake as calling a domain clean because a blocklist did
+    // not answer, and it is the one thing this tool must never do.
     auth: r.auth && {
-      score: r.auth.score ?? 0,
-      spf: r.auth.spf?.present ? (r.auth.spf.status === 'pass' ? 'pass' : 'weak') : 'missing',
+      // Never coerce an unmeasurable score to 0. That is the worst possible
+      // value, and it would be reported for a domain nobody could check.
+      score: typeof r.auth.score === 'number' ? r.auth.score : null,
+      complete: r.auth.complete !== false,
+      spf: authState(r.auth.spf, (s) => (s.status === 'pass' ? 'pass' : 'weak')),
       spfPolicy: r.auth.spf?.policy || '',
       dkim: r.auth.dkim?.present ? 'pass' : 'none',
       dkimSelectors: (r.auth.dkim?.selectors || []).map((x) => x.selector).join(' '),
-      dmarc: r.auth.dmarc?.present ? (r.auth.dmarc.policy === 'reject' ? 'pass' : 'weak') : 'missing',
+      dmarc: authState(r.auth.dmarc, (d) => (d.policy === 'reject' ? 'pass' : 'weak')),
       dmarcPolicy: r.auth.dmarc?.policy || '',
-      mx: r.auth.mx?.records?.length || 0,
+      mx: r.auth.mx?.status === 'unknown' ? 'unknown' : (r.auth.mx?.records?.length || 0),
       ptr: r.auth.ptr ? r.auth.ptr.status : 'n/a',
     },
   };
+}
+
+/** 'unknown' when the lookup failed, otherwise 'missing' or the caller's verdict. */
+function authState(rec, present) {
+  if (!rec) return 'unknown';
+  if (rec.status === 'unknown') return 'unknown';
+  return rec.present ? present(rec) : 'missing';
 }
 
 function summarize(results, tookMs) {
