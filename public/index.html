@@ -114,6 +114,35 @@
     td.a-bad { color: var(--bad); font-weight: 600; }
     /* The lookup failed. Deliberately muted: it is not a finding either way. */
     td.a-unknown { color: var(--muted); font-weight: 600; }
+    /* Analyze tab: compact summary chips + collapsed detail table */
+    .sumchips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 2px; }
+    .sumchips .chip b { font-weight: 800; }
+    .chip.c-bad { background: rgba(255,95,86,.14); color: var(--bad); }
+    .chip.c-warn { background: rgba(224,169,44,.14); color: var(--listed); }
+    .chip.c-ok { background: rgba(53,196,106,.12); color: var(--clean); }
+    .chip.c-mute { background: rgba(110,118,129,.15); color: var(--muted); }
+    .listed-line { margin-top: 10px; font-size: 13.5px; }
+    .listed-line b { color: var(--bad); }
+    .authchips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+    .authchips .lbl { color: var(--muted); font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+    details.bl-details { margin-top: 10px; }
+    details.bl-details > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 16px; border-radius: 10px; background: var(--card); border: 1px solid var(--line2);
+      font-size: 13.5px; font-weight: 600; color: var(--fg); user-select: none; }
+    details.bl-details > summary::-webkit-details-marker { display: none; }
+    details.bl-details > summary::after { content: '\25BC'; font-size: 10px; color: var(--muted); }
+    details.bl-details[open] > summary::after { content: '\25B2'; }
+    details.bl-details > summary:hover { border-color: var(--accent); }
+    /* Reputation systems (receiver-side, manual lookups) */
+    .rep-row { display: flex; gap: 14px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+    .rep-row:first-of-type { border-top: none; padding-top: 2px; }
+    .rep-name { font-weight: 700; font-size: 14px; }
+    .rep-gates { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+    .rep-open { flex: none; padding: 8px 16px; border-radius: 9px; background: var(--card); border: 1px solid var(--line2);
+      color: var(--fg); font-size: 13px; font-weight: 600; text-decoration: none; }
+    .rep-open:hover { border-color: var(--accent); color: var(--accent); }
+    .rep-tag { flex: none; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--muted); background: rgba(110,118,129,.15); padding: 3px 10px; border-radius: 999px; }
     /* blacklist results table */
     .tbl-head { display: flex; align-items: center; justify-content: space-between; margin: 22px 0 8px; }
     .toggle { font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
@@ -875,10 +904,36 @@ mail.contoso.org"></textarea>
       h += '<div class="meta">Checked against <b>' + (bl.trustedZones ?? bl.zonesChecked) + '</b> of '
         + bl.zonesChecked + ' blocklists. '
         + '<span class="mini">The other ' + (bl.skippedCount || 0) + ' cannot give a reliable answer from this server.</span></div>';
-      h += '<div class="meta">Listed <b class="txt-bad">' + bl.listedCount + '</b> · ' + bl.okCount + ' clean · '
-        + '<b class="txt-warn">' + bl.timeoutCount + '</b> timeout'
-        + (bl.skippedCount ? ' · ' + bl.skippedCount + ' skipped' : '')
-        + (d.auth ? ' · auth score <b>' + fmtScore(d.auth.score) + '</b>' : '') + ' · ' + d.tookMs + 'ms</div>';
+      // The whole verdict at a glance: counts as chips, then which lists, then
+      // the DNS record health in one row. Detail lives behind the fold below.
+      h += '<div class="sumchips">'
+        + '<span class="chip ' + (bl.listedCount ? 'c-bad' : 'c-ok') + '"><b>' + bl.listedCount + '</b> listed</span>'
+        + '<span class="chip c-ok"><b>' + bl.okCount + '</b> clean</span>'
+        + (bl.timeoutCount ? '<span class="chip c-warn"><b>' + bl.timeoutCount + '</b> no answer</span>' : '')
+        + (bl.skippedCount ? '<span class="chip c-mute"><b>' + bl.skippedCount + '</b> not checked</span>' : '')
+        + '<span class="chip c-mute">' + d.tookMs + 'ms</span>'
+        + '</div>';
+      if (bl.confidence && bl.confidence !== 'high') {
+        h += '<div class="mini" style="margin-top:8px">Only ' + bl.answeredZones
+          + ' blocklists answered this time, so treat this result as provisional and re-check.</div>';
+      }
+      if (bl.listedCount) {
+        h += '<div class="listed-line"><b>Listed on:</b> '
+          + bl.listings.map((l) => esc(l.name || l.zone)).join(', ') + '</div>';
+      }
+      if (d.auth) {
+        const st = (rec, presentWord) => {
+          if (!rec) return null;
+          if (rec.status === 'unknown' && !rec.present && rec.error) return ['not checked', 'c-mute'];
+          if (rec.present === false) return ['missing', 'c-bad'];
+          if (rec.status === 'pass') return [presentWord || 'pass', 'c-ok'];
+          return ['weak', 'c-warn'];
+        };
+        const parts = [['SPF', st(d.auth.spf)], ['DKIM', d.auth.dkim && d.auth.dkim.present ? ['pass', 'c-ok'] : ['none found', 'c-warn']], ['DMARC', st(d.auth.dmarc)]];
+        h += '<div class="authchips"><span class="lbl">DNS records</span>'
+          + parts.filter((x) => x[1]).map(([n, v]) => '<span class="chip ' + v[1] + '">' + n + ' ' + esc(v[0]) + '</span>').join('')
+          + '<a href="#" id="goto-auth" class="mini">full details in the Email auth tab</a></div>';
+      }
       h += '<div class="dns"><div><b>A</b> ' + (esc(d.dns.a.join(', ')) || 'None') + '</div>'
         + (d.dns.aaaa.length ? '<div><b>AAAA</b> ' + esc(d.dns.aaaa.join(', ')) + '</div>' : '')
         + '<div><b>MX</b> ' + (esc(d.dns.mx.join(', ')) || 'None') + '</div></div>';
@@ -903,7 +958,20 @@ mail.contoso.org"></textarea>
         }
       }
 
-      // --- blacklist section ---
+      // --- receiver-side reputation systems (manual lookups) ---
+      if (d.reputation && d.reputation.length) {
+        h += '<h3>Inbox providers <span class="mini">checked by hand, not part of the score yet</span></h3>';
+        h += '<div class="card">';
+        for (const rsys of d.reputation) {
+          h += '<div class="rep-row"><div style="flex:1"><div class="rep-name">' + esc(rsys.name) + '</div>'
+            + '<div class="rep-gates">' + esc(rsys.gates) + '. ' + esc(rsys.means) + '</div></div>'
+            + '<span class="rep-tag">manual</span>'
+            + '<a class="rep-open" href="' + esc(rsys.url) + '" target="_blank" rel="noopener">Open lookup</a></div>';
+        }
+        h += '</div>';
+      }
+
+      // --- blacklist section, folded so the tab reads short by default ---
       h += '<div class="tbl-head"><h3 style="margin:0">Blocklists <span class="mini">'
         + bl.zonesChecked + ' total, ' + bl.listedCount + ' listed</span></h3></div>';
       // One row of filters, and a state only appears when it has something in it.
@@ -914,10 +982,14 @@ mail.contoso.org"></textarea>
         { key: 'timeout', label: 'Timeout', n: bl.timeoutCount },
         { key: 'skipped', label: 'Not checked', n: bl.skippedCount },
       ].filter((f) => f.key === 'all' || f.n > 0);
+      // Open by default only when something is listed; a clean result stays short.
+      h += '<details class="bl-details"' + (bl.listedCount ? ' open' : '') + '>'
+        + '<summary>' + (bl.listedCount ? 'Full results' : 'Show all ' + bl.zonesChecked + ' blocklists') + '</summary>';
       h += '<div class="cat-tabs" id="status-tabs">' + FILTERS.map((f) =>
         '<span class="cat st-filter' + (blStatus === f.key ? ' active' : '') + '" data-status="' + f.key + '">'
         + esc(f.label) + ' ' + f.n + '</span>').join('') + '</div>';
       h += '<div class="table-scroll" id="bl-table">' + renderBlTable(bl) + '</div>';
+      h += '</details>';
 
       // --- signals (ESP-sourced, not connected) ---
 
@@ -1020,20 +1092,38 @@ mail.contoso.org"></textarea>
       return h;
     }
 
+    // The removal buttons live inside the table, so every re-render of the
+    // table must re-bind them or "Start removal" silently stops working after
+    // the first filter click.
+    function wireBlTable() {
+      document.querySelectorAll('#bl-table .delist').forEach((btn) => btn.addEventListener('click', () => {
+        openRemoval(btn.dataset.zone, btn.dataset.subject);
+      }));
+    }
+
+    function redrawBlTable() {
+      document.getElementById('bl-table').innerHTML = renderBlTable(report.blacklist);
+      wireBlTable();
+    }
+
     function wireAnalyze() {
       document.querySelectorAll('#status-tabs .st-filter').forEach((el) => el.addEventListener('click', () => {
         blStatus = el.dataset.status;
         document.querySelectorAll('#status-tabs .st-filter').forEach((x) => x.classList.toggle('active', x === el));
-        document.getElementById('bl-table').innerHTML = renderBlTable(report.blacklist);
+        redrawBlTable();
       }));
-      document.querySelectorAll('#bl-table .delist').forEach((btn) => btn.addEventListener('click', () => {
-        openRemoval(btn.dataset.zone, btn.dataset.subject);
-      }));
+      wireBlTable();
       document.querySelectorAll('#cat-tabs .cat').forEach((el) => el.addEventListener('click', () => {
         blCategory = el.dataset.cat;
         document.querySelectorAll('#cat-tabs .cat').forEach((x) => x.classList.toggle('active', x === el));
-        document.getElementById('bl-table').innerHTML = renderBlTable(report.blacklist);
+        redrawBlTable();
       }));
+      const ga = document.getElementById('goto-auth');
+      if (ga) ga.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const t = document.querySelector('.tab[data-tab="auth"]');
+        if (t) t.click();
+      });
     }
 
     // ================= REMOVAL GUIDE =================

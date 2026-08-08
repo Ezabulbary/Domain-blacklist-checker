@@ -189,8 +189,10 @@ export function buildServer() {
     return {
     count: ALL_ZONES.length,
     categories: CATEGORIES,
-    zones: ALL_ZONES.map(({ name, zone, type, category, weight, severity, status, note }) => ({
-      name, zone, type, category, weight, severity, status, note,
+    // `weight` is deliberately not exposed: severity says how bad a listing is
+    // in words, and the exact scoring split stays server-side.
+    zones: ALL_ZONES.map(({ name, zone, type, category, severity, status, note }) => ({
+      name, zone, type, category, severity, status, note,
     })),
     };
   });

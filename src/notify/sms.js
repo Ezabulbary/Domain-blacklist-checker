@@ -26,7 +26,6 @@ const TIER_1 = new Set([
   'dbl.spamhaus.org',        // domain reputation, changing IP does not help
   'b.barracudacentral.org',  // heavy in corporate environments
   'multi.surbl.org',         // blocks on links inside the mail, not the sending IP
-  'bl.spamcop.net',          // blocks directly and feeds downstream filters
 ]);
 
 // Real, but confined to particular filters or ISPs. Worth a message, not a siren.
@@ -35,6 +34,9 @@ const TIER_2 = new Set([
   'sip.invaluement.com', 'uri.invaluement.com', 'sip24.invaluement.com',
   'uribl.spameatingmonkey.net', 'bl.mailspike.net', 'z.mailspike.net',
   'bl.score.senderscore.com', 'hostkarma.junkemailfilter.com', 'truncate.gbudb.net',
+  // SpamCop auto-expires in about a day. Real, worth a calm message, not a
+  // middle-of-the-night one.
+  'bl.spamcop.net',
 ]);
 
 // Lists that cause no delivery impact worth texting about: they list whole

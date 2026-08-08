@@ -2,6 +2,7 @@ import { checkDomain } from './check.js';
 import { checkAuth } from './auth.js';
 import { recommend } from './recommend.js';
 import { buildResolver } from './resolve.js';
+import { deliverabilityScore, reputationReport } from './deliverability.js';
 
 /**
  * Unified deliverability report. The data behind the Overview dashboard.
@@ -41,6 +42,14 @@ export async function analyzeDomain(input, opts = {}) {
 
     riskScore: risk.score,
     standing: risk.standing,
+    // Each component's own 0-100 score and whether it could be measured. The
+    // weights that blend them stay server-side on purpose.
+    components: risk.components,
+
+    // Receiver-side reputation systems (Postmaster, SNDS, Talos, PDR). No DNS
+    // query can read these, so until an account is connected they are manual
+    // lookups, listed with a prefilled URL and excluded from the score.
+    reputation: reputationReport({ ip: bl.resolvesTo?.[0] || null, domain: bl.isIp ? null : bl.domain }),
 
     auth: auth
       ? {
@@ -85,29 +94,20 @@ export async function analyzeDomain(input, opts = {}) {
 }
 
 /**
- * Blend authentication health and blacklist reputation into a single 0-100
- * risk score. Blacklist reputation is weighted a bit heavier than auth.
+ * Blend the measurable components into a single 0-100 deliverability score.
+ * Kept under its old name so existing callers and tests keep working.
  */
-export function riskScore({ bl, auth }) {
-  // Either half can be genuinely unmeasurable: no blocklist answered, or the
-  // subject is a bare IP with no domain to authenticate. Substituting 100 for a
-  // missing half, which is what this used to do, invents a perfect result out
-  // of an absence of data. Instead the present halves are reweighted, and if
-  // neither could be measured there is no score to report.
-  const blScore = typeof bl?.score === 'number' ? bl.score : null;
-  const authS = typeof auth?.score === 'number' ? auth.score : null;
-
-  let score;
-  if (blScore === null && authS === null) score = null;
-  else if (authS === null) score = Math.round(blScore);
-  else if (blScore === null) score = Math.round(authS);
-  else score = Math.round(blScore * 0.6 + authS * 0.4);
-
-  let standing = 'good standing';
-  if (score === null) standing = 'not measured';
-  else if (score < 50) standing = 'poor';
-  else if (score < 80) standing = 'at risk';
-  return { score, standing };
+export function riskScore({ bl, auth, reputation }) {
+  // The blend lives in deliverability.js: blocklists carry most of it, the
+  // receiver-side reputation systems the next share, and DNS authentication the
+  // smallest. A component that could not be measured (no blocklist answered, a
+  // bare IP with no domain to authenticate, no reputation feed connected) drops
+  // out of the denominator instead of being scored as perfect or as zero.
+  return deliverabilityScore({
+    blocklist: typeof bl?.score === 'number' ? bl.score : null,
+    auth: typeof auth?.score === 'number' ? auth.score : null,
+    reputation: typeof reputation === 'number' ? reputation : null,
+  });
 }
 
 // The signal catalog mirrors the reference tool's "Signal Database Sources".
