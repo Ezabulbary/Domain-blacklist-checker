@@ -408,7 +408,7 @@ export function buildServer() {
   // The scope catalog, so the create form and the docs stay in step with the
   // server rather than drifting from a hardcoded copy.
   app.get('/api/scopes', async (req, reply) => {
-    if (!(await authOk(req, reply))) return;
+    if (!(await authOk(req, reply, 'keys:write'))) return;
     return { ok: true, all: ALL_SCOPE, scopes: SCOPES };
   });
 

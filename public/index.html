@@ -47,6 +47,7 @@
       cursor: pointer; font-weight: 600; font-size: 14px; color: var(--muted);
       border: 1px solid transparent; transition: all .15s; user-select: none; }
     .tab svg { width: 17px; height: 17px; flex: none; }
+    .tab.hidden { display: none; }
     .tab:hover { color: var(--fg); background: rgba(13,111,248,.06); }
     .tab.active { color: #fff; background: linear-gradient(180deg, var(--accent), var(--accent2));
       box-shadow: 0 2px 10px rgba(13,111,248,.30); }
@@ -595,11 +596,20 @@ mail.contoso.org"></textarea>
           roleEl.textContent = me.role || '';
           roleEl.classList.toggle('r-user', me.role !== 'admin');
         }
-        // Key management is admin-only again; the server enforces it, the
-        // button says so before the user wastes a click.
+        // The API page is the admin's alone: the user role does not even see
+        // the menu item. The server enforces the underlying key routes too, so
+        // hiding the door is presentation, not the lock.
+        const admin = me.role === 'admin' || me.loginEnabled === false;
+        const apiTab = document.querySelector('.tab[data-tab="api"]');
+        if (apiTab) {
+          apiTab.classList.toggle('hidden', !admin);
+          if (!admin && apiTab.classList.contains('active')) {
+            const home = document.querySelector('.tab[data-tab="single"]');
+            if (home) home.click();
+          }
+        }
         const gk = document.getElementById('gen-key');
         if (gk) {
-          const admin = me.role === 'admin';
           gk.disabled = !admin;
           gk.title = admin ? '' : 'Only the admin account can create API keys';
         }

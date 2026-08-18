@@ -138,6 +138,19 @@ test('share links stay public: no login needed to view a snapshot', async () => 
   await app.close();
 });
 
+test('the scope catalog is admin-only, like the rest of key management', async () => {
+  const app = buildServer();
+  const { cookie: userCookie } = await loginAs(app, 'user', 'pass@user');
+  const denied = await app.inject({ method: 'GET', url: '/api/scopes', headers: { cookie: userCookie } });
+  assert.equal(denied.statusCode, 403);
+
+  const { cookie: adminCookie } = await loginAs(app, 'admin', 'pass-@admin');
+  const ok = await app.inject({ method: 'GET', url: '/api/scopes', headers: { cookie: adminCookie } });
+  assert.equal(ok.statusCode, 200);
+  assert.ok(ok.json().scopes.length > 5);
+  await app.close();
+});
+
 test('login attempts are rate limited', async () => {
   const app = buildServer();
   let last;
