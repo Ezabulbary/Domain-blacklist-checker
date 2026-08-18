@@ -39,10 +39,25 @@ export async function createShare(kind, payload) {
 
   const id = newShareId();
   if (dbEnabled()) {
-    const row = await db.shares.createShare({ id, kind, payload, ttlDays: TTL_DAYS });
-    // Best-effort tidiness; correctness comes from the read-side expiry check.
-    db.shares.sweepShares().catch(() => {});
-    return { id: row.id, expiresAt: row.expires_at, persisted: true };
+    // A database that is configured but unreachable (bad DATABASE_URL, network
+    // down, Supabase paused) must not take the feature down with it. The link
+    // still gets created, in memory, and the response says so, instead of the
+    // user seeing a raw resolver error where their link should be.
+    try {
+      const row = await db.shares.createShare({ id, kind, payload, ttlDays: TTL_DAYS });
+      // Best-effort tidiness; correctness comes from the read-side expiry check.
+      db.shares.sweepShares().catch(() => {});
+      return { id: row.id, expiresAt: row.expires_at, persisted: true };
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[share] database write failed, keeping the snapshot in memory:', e.message);
+      const expiresAt = new Date(Date.now() + TTL_DAYS * 86400_000).toISOString();
+      mem.set(id, { kind, payload, createdAt: new Date().toISOString(), expiresAt });
+      while (mem.size > MEM_MAX) mem.delete(mem.keys().next().value);
+      // dbFailed lets the caller say "your database is broken", which is a
+      // different problem from "you have not configured one".
+      return { id, expiresAt, persisted: false, dbFailed: true };
+    }
   }
 
   const expiresAt = new Date(Date.now() + TTL_DAYS * 86400_000).toISOString();
@@ -55,8 +70,19 @@ export async function createShare(kind, payload) {
 export async function getShare(id) {
   if (!/^[0-9a-f]{32}$/.test(String(id || ''))) return null;
   if (dbEnabled()) {
-    const row = await db.shares.getShare(id);
-    return row ? { kind: row.kind, payload: row.payload, createdAt: row.created_at, expiresAt: row.expires_at } : null;
+    let row = null;
+    let dbDown = false;
+    try {
+      row = await db.shares.getShare(id);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[share] database read failed, falling back to memory:', e.message);
+      dbDown = true;
+    }
+    if (row) return { kind: row.kind, payload: row.payload, createdAt: row.created_at, expiresAt: row.expires_at };
+    // The snapshot may live in memory: either it was created during an outage,
+    // or the configured database was never reachable at all.
+    if (!dbDown && !mem.has(id)) return null;
   }
   const m = mem.get(id);
   if (!m) return null;

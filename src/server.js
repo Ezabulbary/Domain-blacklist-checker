@@ -92,7 +92,15 @@ async function authOk(req, reply, scope) {
     // they do not grant more than an anonymous caller already has.
     return true;
   }
-  const v = await validateApiKey(key);
+  let v;
+  try {
+    v = await validateApiKey(key);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[auth] key verification failed:', e.message);
+    reply.code(503).send({ ok: false, error: 'the server cannot verify API keys right now (database unreachable). Try again shortly, or retry without a key.' });
+    return false;
+  }
   if (!v) {
     reply.code(401).send({ ok: false, error: 'invalid API key' });
     return false;
@@ -273,10 +281,16 @@ export function buildServer() {
         persisted: r.persisted,
         note: r.persisted
           ? null
-          : 'No database is configured, so this link is held in memory and dies when the server restarts. Set DATABASE_URL to keep share links.',
+          : r.dbFailed
+            ? 'The configured database could not be reached, so this link is held in memory and dies when the server restarts. Check DATABASE_URL in .env.'
+            : 'No database is configured, so this link is held in memory and dies when the server restarts. Set DATABASE_URL to keep share links.',
       };
     } catch (e) {
-      return reply.code(400).send({ ok: false, error: e.message, maxBytes: SHARE_MAX_BYTES });
+      if (/kind|object|too large/.test(e.message)) {
+        return reply.code(400).send({ ok: false, error: e.message, maxBytes: SHARE_MAX_BYTES });
+      }
+      req.log?.error?.(e);
+      return reply.code(500).send({ ok: false, error: 'could not save the snapshot, try again shortly' });
     }
   });
 

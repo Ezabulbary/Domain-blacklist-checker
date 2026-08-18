@@ -141,6 +141,14 @@
     .rep-open { flex: none; padding: 8px 16px; border-radius: 9px; background: var(--card); border: 1px solid var(--line2);
       color: var(--fg); font-size: 13px; font-weight: 600; text-decoration: none; }
     .rep-open:hover { border-color: var(--accent); color: var(--accent); }
+    /* Share row: its own strip under the summary, so the button and the link
+       never squeeze into the DNS lines above. */
+    .share-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .share-row .ghost { flex: none; white-space: nowrap; }
+    .share-note { flex: 1; min-width: 220px; font-size: 12.5px; color: var(--muted);
+      word-break: break-all; line-height: 1.5; }
+    .share-note.err { color: var(--bad); word-break: normal; }
     .rep-tag { flex: none; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
       color: var(--muted); background: rgba(110,118,129,.15); padding: 3px 10px; border-radius: 999px; }
     /* blacklist results table */
@@ -868,11 +876,15 @@ mail.contoso.org"></textarea>
         try { await navigator.clipboard.writeText(url); btn.textContent = 'Link copied!'; }
         catch { btn.textContent = 'Link ready'; }
         if (noteEl) {
-          noteEl.textContent = url + (j.persisted ? '' : ' · kept in memory, dies on server restart (set DATABASE_URL to keep links)');
+          noteEl.textContent = url + (j.note ? ' · ' + j.note : '');
         }
+        if (noteEl) noteEl.classList.remove('err');
       } catch (e) {
-        btn.textContent = 'Failed';
-        if (noteEl) noteEl.textContent = e.message;
+        btn.textContent = 'Try again';
+        if (noteEl) {
+          noteEl.classList.add('err');
+          noteEl.textContent = 'Could not create the link: ' + e.message;
+        }
       }
       setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2600);
     }
@@ -977,8 +989,8 @@ mail.contoso.org"></textarea>
         + (d.dns.aaaa.length ? '<div><b>AAAA</b> ' + esc(d.dns.aaaa.join(', ')) + '</div>' : '')
         + '<div><b>MX</b> ' + (esc(d.dns.mx.join(', ')) || 'None') + '</div></div>';
       if (!sharedView) {
-        h += '<div style="margin-top:12px"><button class="ghost" id="share-single" type="button">Copy shareable link</button>'
-          + ' <span class="mini" id="share-single-note"></span></div>';
+        h += '<div class="share-row"><button class="ghost" id="share-single" type="button">Copy shareable link</button>'
+          + '<span class="share-note" id="share-single-note">Freeze this result behind a private link your client can open.</span></div>';
       }
       h += '</div></div>';
 
