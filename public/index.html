@@ -1355,6 +1355,16 @@ mail.contoso.org"></textarea>
         txtNote = 'Full TXT lookup timed out; showing the SPF record found by the auth check. Other TXT records may exist.';
       }
       add('TXT', txt, txtNote);
+      const cname = d.dnsRecords ? d.dnsRecords.cname : [];
+      add('CNAME', cname, (cname && !cname.length) ? 'A root domain normally cannot have a CNAME; the www host is shown below.' : '');
+      const wwwC = d.dnsRecords && d.dnsRecords.wwwCname;
+      if (wwwC === null) {
+        add('CNAME (www)', null);
+      } else if (wwwC && wwwC.length) {
+        add('CNAME (www)', wwwC.map((v) => 'www.' + d.domain + ' → ' + v));
+      } else if (d.dnsRecords) {
+        add('CNAME (www)', []);
+      }
       const ptrs = (d.auth && d.auth.ptr && d.auth.ptr.records) || [];
       if (ptrs.length) add('PTR', ptrs.map((r) => r.ip + '  ' + (r.host || 'no reverse DNS') + (r.forwardConfirmed ? '  (forward confirmed)' : '')));
 
@@ -1368,7 +1378,7 @@ mail.contoso.org"></textarea>
           h += r.values.map((v) => '<div class="dns-val">' + esc(v) + '</div>').join('');
           if (r.note) h += '<div class="mini" style="margin-top:4px">' + esc(r.note) + '</div>';
         } else {
-          h += '<span class="mini">None published</span>';
+          h += '<span class="mini">None published' + (r.note ? '. ' + esc(r.note) : '') + '</span>';
         }
         h += '</td></tr>';
       }

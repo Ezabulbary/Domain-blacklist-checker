@@ -37,17 +37,27 @@ export async function analyzeDomain(input, opts = {}) {
   if (!bl.isIp) {
     // Guarded call: a resolver may not implement every method (test stubs,
     // minimal custom resolvers), and a missing method throws synchronously,
-    // which is not the same failure as a lookup that errored. A failure comes
-    // back as null, never as [] - "could not look up" and "none published" are
-    // different answers and the page must not show a timeout as "no records".
+    // which is not the same failure as a lookup that errored. ENODATA and
+    // ENOTFOUND are real answers ("this record does not exist") and come back
+    // as []. Any other failure (timeout, refused) comes back as null - "could
+    // not look up" and "none published" are different answers and the page
+    // must not show a timeout as "no records".
     const safe = (fn) => {
-      try { return Promise.resolve(fn()).catch(() => null); } catch { return Promise.resolve(null); }
+      try {
+        return Promise.resolve(fn()).catch((e) =>
+          (e && (e.code === 'ENODATA' || e.code === 'ENOTFOUND')) ? [] : null);
+      } catch { return Promise.resolve(null); }
     };
-    const [ns, txt] = await Promise.all([
+    const [ns, txt, cname, wwwCname] = await Promise.all([
       safe(() => resolver.resolveNs(bl.domain)),
       safe(() => resolver.resolveTxt(bl.domain)).then((r) => (r ? r.map((x) => (Array.isArray(x) ? x.join('') : String(x))) : null)),
+      // A root/apex domain rarely has a CNAME (the standard forbids it next to
+      // other records), so the www host is looked up too - that is where a
+      // site's CNAME usually lives.
+      safe(() => resolver.resolveCname(bl.domain)),
+      safe(() => resolver.resolveCname('www.' + bl.domain)),
     ]);
-    dnsRecords = { ns, txt };
+    dnsRecords = { ns, txt, cname, wwwCname };
   }
 
   return {
