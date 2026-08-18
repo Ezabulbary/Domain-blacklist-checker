@@ -16,6 +16,7 @@ import { getCalibration, isTrusted, summarize } from './lib/calibrate.js';
 import { removalGuide, KIND_LABEL } from './lib/removal.js';
 import { readiness, stillListed } from './lib/delist.js';
 import { createShare, getShare, MAX_BYTES as SHARE_MAX_BYTES } from './lib/share.js';
+import { login, getSession, destroySession } from './lib/sessions.js';
 import { buildResolver } from './lib/resolve.js';
 import { ALL_ZONES, CATEGORIES } from './lib/zones.js';
 import { dbEnabled } from './db/pool.js';
@@ -88,8 +89,31 @@ async function authOk(req, reply, scope) {
       reply.code(401).send({ ok: false, error: 'API key required. Send it as the X-API-Key header' });
       return false;
     }
-    // Anonymous access is still allowed here. Scopes bound what a key may do,
-    // they do not grant more than an anonymous caller already has.
+    if (LOGIN_DISABLED) return true;
+    // Browser path: a logged-in session instead of a key.
+    const sess = sessionOf(req);
+    if (!sess) {
+      reply.code(401).send({ ok: false, error: 'login required', login: true });
+      return false;
+    }
+    // CSRF: SameSite=Lax already keeps the cookie off cross-site POSTs; on top
+    // of that, any state-changing request that carries an Origin must name us.
+    if (req.method !== 'GET' && req.headers.origin) {
+      let originHost = null;
+      try { originHost = new URL(req.headers.origin).host; } catch { /* malformed */ }
+      if (originHost !== req.headers.host) {
+        reply.code(403).send({ ok: false, error: 'cross-origin request refused' });
+        return false;
+      }
+    }
+    // Role gate: key management changes who can access what, so it is the
+    // admin's alone. Everything else both roles can do.
+    if (scope === 'keys:write' && sess.role !== 'admin') {
+      reply.code(403).send({ ok: false, error: 'only the admin account can manage API keys' });
+      return false;
+    }
+    req.user = sess.user;
+    req.role = sess.role;
     return true;
   }
   let v;
@@ -129,6 +153,41 @@ function limited(req, cost = 1) {
   return req.apiKey
     ? rateLimited('k:' + req.apiKey, cost, RATE_MAX_KEYED)
     : rateLimited(req.ip, cost, RATE_MAX);
+}
+
+// The dashboard requires a login (two fixed accounts, see sessions.js). Set
+// DBC_LOGIN_DISABLED=true to run the old open mode, e.g. for an embedded
+// deployment that has its own auth in front.
+const LOGIN_DISABLED = process.env.DBC_LOGIN_DISABLED === 'true';
+const COOKIE = 'dbc_sid';
+
+function cookieVal(req, name) {
+  const raw = req.headers.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return null;
+}
+
+function setSessionCookie(reply, id, maxAgeSeconds) {
+  // HttpOnly: no script can read it. SameSite=Lax: browsers do not attach it to
+  // cross-site POSTs, which closes most CSRF on its own (the Origin check in
+  // authOk covers the rest). Secure when explicitly behind HTTPS.
+  const secure = process.env.DBC_COOKIE_SECURE === 'true' ? '; Secure' : '';
+  reply.header('set-cookie', `${COOKIE}=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`);
+}
+
+function clearSessionCookie(reply) {
+  reply.header('set-cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+}
+
+/** The live session on this request, or null. */
+function sessionOf(req) {
+  const sid = cookieVal(req, COOKIE);
+  return sid ? getSession(sid) : null;
 }
 
 // Persist a successful check when a database is configured. Never let a DB
@@ -189,6 +248,48 @@ export function buildServer() {
   app.register(fastifyStatic, {
     root: join(__dirname, '..', 'public'),
     prefix: '/',
+  });
+
+  // Baseline security headers on every response, static files included.
+  app.addHook('onSend', (req, reply, payload, done) => {
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('x-frame-options', 'DENY');
+    reply.header('referrer-policy', 'no-referrer');
+    done(null, payload);
+  });
+
+  // ---- Login (two fixed accounts, roles admin and user; see sessions.js) ----
+  app.post('/api/login', async (req, reply) => {
+    // Brute force is the whole threat model of a fixed-credential login, so
+    // attempts are tightly rate-limited per IP, well below the global budget.
+    if (rateLimited('login:' + req.ip, 1, 10)) {
+      return reply.code(429).send({ ok: false, error: 'too many login attempts, wait a minute' });
+    }
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const s = login(body.username, body.password);
+    if (!s) {
+      // One generic message. Saying which field was wrong helps only attackers.
+      return reply.code(401).send({ ok: false, error: 'wrong username or password' });
+    }
+    setSessionCookie(reply, s.id, s.maxAgeSeconds);
+    return { ok: true, user: s.user, role: s.role };
+  });
+
+  app.post('/api/logout', async (req, reply) => {
+    const sid = cookieVal(req, COOKIE);
+    if (sid) destroySession(sid);
+    clearSessionCookie(reply);
+    return { ok: true };
+  });
+
+  // Who am I. Public on purpose: the page asks this before deciding whether to
+  // show the login screen, and it reveals nothing an attacker can use.
+  app.get('/api/me', async (req) => {
+    if (LOGIN_DISABLED) return { ok: true, loginEnabled: false, authenticated: true, user: 'open', role: 'admin' };
+    const sess = sessionOf(req);
+    return sess
+      ? { ok: true, loginEnabled: true, authenticated: true, user: sess.user, role: sess.role }
+      : { ok: true, loginEnabled: true, authenticated: false };
   });
 
   app.get('/api/health', async () => ({ status: 'ok', zones: ALL_ZONES.length, db: dbEnabled() }));
@@ -306,15 +407,15 @@ export function buildServer() {
 
   // The scope catalog, so the create form and the docs stay in step with the
   // server rather than drifting from a hardcoded copy.
-  app.get('/api/scopes', async () => ({
-    ok: true,
-    all: ALL_SCOPE,
-    scopes: SCOPES,
-  }));
+  app.get('/api/scopes', async (req, reply) => {
+    if (!(await authOk(req, reply))) return;
+    return { ok: true, all: ALL_SCOPE, scopes: SCOPES };
+  });
 
   // Create an API key. Body: { name, scopes: [...], email? }
   // The key is returned exactly once and is never stored, only its hash.
   app.post('/api/keys', async (req, reply) => {
+    if (!(await authOk(req, reply, 'keys:write'))) return;
     if (rateLimited(req.ip, 5)) {
       return reply.code(429).send({ ok: false, error: 'too many key requests, slow down' });
     }

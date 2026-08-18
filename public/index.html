@@ -333,6 +333,31 @@
     .modal-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
     .modal-actions .ghost { padding: 11px 18px; font-size: 13.5px; }
     .watch-out { margin-top: 10px; font-size: 13px; }
+    /* Login screen: covers everything until a session exists. */
+    .login-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 200;
+      display: grid; place-items: center; padding: 24px; }
+    .login-overlay.hidden { display: none; }
+    /* display:block beats the global `form { display:flex }` used by the
+       search bars, which would otherwise smear this form into one row. */
+    .login-card { display: block; width: 100%; max-width: 400px;
+      background: linear-gradient(180deg, var(--card2), var(--card));
+      border: 1px solid var(--line2); border-radius: 16px; padding: 34px 34px 30px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.55); }
+    .login-card .f-input { width: 100%; }
+    .login-card h2 { margin: 0 0 4px; font-size: 22px; letter-spacing: -.01em; }
+    .login-sub { color: var(--muted); font-size: 13.5px; margin-bottom: 20px; }
+    .login-card .f-input { margin-bottom: 4px; }
+    .login-err { color: var(--bad); font-size: 13px; min-height: 18px; margin: 10px 0 2px; }
+    .login-card button[type="submit"] { width: 100%; margin-top: 8px; }
+    /* Who is logged in, top right of the page. */
+    .whoami { position: absolute; top: 26px; right: 0; display: flex; gap: 10px; align-items: center; }
+    .whoami .who-name { font-size: 13.5px; font-weight: 600; }
+    .whoami .who-role { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
+      padding: 3px 9px; border-radius: 999px; background: rgba(91,157,255,.15); color: var(--accent); }
+    .whoami .who-role.r-user { background: rgba(110,118,129,.18); color: var(--muted); }
+    .whoami .ghost { padding: 8px 14px; font-size: 12.5px; }
+    .whoami.hidden { display: none; }
+    .wrap { position: relative; }
     footer { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff;
       border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; }
@@ -343,6 +368,11 @@
 </head>
 <body>
   <div class="wrap">
+    <div class="whoami hidden" id="whoami">
+      <span class="who-name" id="who-name"></span>
+      <span class="who-role" id="who-role"></span>
+      <button class="ghost" id="logout-btn" type="button">Log out</button>
+    </div>
     <h1>Domain Blacklist Checker</h1>
     <p class="sub">Check a domain and its mail IPs against DNS blocklists. Weighted score, authentication health, and removal links.</p>
 
@@ -438,6 +468,19 @@ mail.contoso.org"></textarea>
       </div>
     </div>
 
+    <div id="login-overlay" class="login-overlay hidden">
+      <form class="login-card" id="login-form">
+        <h2>Domain Blacklist Checker</h2>
+        <div class="login-sub">Sign in to open the dashboard.</div>
+        <label class="f-label" for="login-user">Username</label>
+        <input class="f-input" id="login-user" autocomplete="username" spellcheck="false" autofocus />
+        <label class="f-label" for="login-pass">Password</label>
+        <input class="f-input" id="login-pass" type="password" autocomplete="current-password" />
+        <div class="login-err" id="login-err"></div>
+        <button type="submit" id="login-btn">Sign in</button>
+      </form>
+    </div>
+
     <div id="key-modal" class="modal hidden">
       <div class="modal-card modal-narrow">
         <button class="modal-x" id="key-modal-close" type="button">Close</button>
@@ -456,13 +499,104 @@ mail.contoso.org"></textarea>
 
     // Real catalog size, read from the server so no count is ever hardcoded.
     let zoneCount = 0;
-    fetch('/api/zones').then((r) => r.json()).then((d) => {
-      zoneCount = d.count || 0;
-      const el = document.getElementById('lists-hint');
-      if (el && zoneCount) {
-        el.textContent = zoneCount + ' blocklists, SPF / DKIM / DMARC health, risk score, recommendations';
+    function loadAppData() {
+      fetch('/api/zones').then((r) => r.json()).then((d) => {
+        zoneCount = d.count || 0;
+        const el = document.getElementById('lists-hint');
+        if (el && zoneCount) {
+          el.textContent = zoneCount + ' blocklists, SPF / DKIM / DMARC health, risk score, recommendations';
+        }
+      }).catch(() => {});
+    }
+
+    // ---- login state ----
+    // Share pages (/r/<id>) are public by design: a client with the link sees
+    // the frozen snapshot without an account. Everything else needs a session.
+    const IS_SHARE_PAGE = /^\/r\/[0-9a-f]{32}$/.test(location.pathname);
+    let me = { authenticated: false, loginEnabled: true };
+
+    function applyAuthUi() {
+      const overlay = document.getElementById('login-overlay');
+      const who = document.getElementById('whoami');
+      if (me.authenticated) {
+        overlay.classList.add('hidden');
+        if (me.loginEnabled === false) {
+          who.classList.add('hidden');
+        } else {
+          who.classList.remove('hidden');
+          document.getElementById('who-name').textContent = me.user || '';
+          const roleEl = document.getElementById('who-role');
+          roleEl.textContent = me.role || '';
+          roleEl.classList.toggle('r-user', me.role !== 'admin');
+        }
+        // Key management is the admin's alone; the server enforces it, the
+        // button just says so up front.
+        const gk = document.getElementById('gen-key');
+        if (gk) {
+          const admin = me.role === 'admin';
+          gk.disabled = !admin;
+          gk.title = admin ? '' : 'Only the admin account can create API keys';
+        }
+      } else {
+        who.classList.add('hidden');
+        if (!IS_SHARE_PAGE) {
+          overlay.classList.remove('hidden');
+          const u = document.getElementById('login-user');
+          if (u) setTimeout(() => u.focus(), 50);
+        }
       }
-    }).catch(() => {});
+    }
+
+    // A 401 mid-use means the session expired: back to the login screen, with
+    // whatever was on screen left in place.
+    function sessionExpired(res) {
+      if (res && res.status === 401 && me.loginEnabled !== false && !IS_SHARE_PAGE) {
+        me = { authenticated: false, loginEnabled: true };
+        applyAuthUi();
+        return true;
+      }
+      return false;
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const btn = document.getElementById('login-btn');
+      const err = document.getElementById('login-err');
+      btn.disabled = true; btn.textContent = 'Signing in…'; err.textContent = '';
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('login-user').value.trim(),
+            password: document.getElementById('login-pass').value,
+          }),
+        });
+        const j = await res.json();
+        if (!j.ok) { err.textContent = j.error || 'Sign in failed.'; return; }
+        me = { authenticated: true, loginEnabled: true, user: j.user, role: j.role };
+        document.getElementById('login-pass').value = '';
+        applyAuthUi();
+        loadAppData();
+      } catch (e2) {
+        err.textContent = 'Request failed: ' + e2.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Sign in';
+      }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      try { await fetch('/api/logout', { method: 'POST' }); } catch {}
+      location.reload();
+    });
+
+    (async function bootAuth() {
+      try { me = await (await fetch('/api/me')).json(); }
+      catch { me = { authenticated: false, loginEnabled: true }; }
+      me.authenticated = Boolean(me.authenticated);
+      applyAuthUi();
+      if (me.authenticated) loadAppData();
+    })();
     const scoreColor = (s) => (s >= 85 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)');
 
     // ---- tabs ----
@@ -847,6 +981,7 @@ mail.contoso.org"></textarea>
         + ': DNS records, authentication, and ' + (zoneCount ? zoneCount + ' blocklists' : 'blocklists') + '.</div>';
       try {
         const res = await fetch('/api/analyze?domain=' + encodeURIComponent(domain));
+        if (sessionExpired(res)) { sOut.innerHTML = ''; return; }
         renderAnalyze(await res.json());
       } catch (err) {
         sOut.innerHTML = '<div class="card err">Request failed: ' + esc(err.message) + '</div>';
@@ -1409,6 +1544,7 @@ mail.contoso.org"></textarea>
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify({ domains: batch, auth: withAuth }),
             });
+            if (sessionExpired(res)) { cancel = true; break; }
             const data = await res.json();
             if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
             lastResults = lastResults.concat(data.results.filter(Boolean));

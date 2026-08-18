@@ -35,9 +35,12 @@ test('an oversized snapshot is refused with the limit named', async () => {
 
 test('the share routes work end to end', async () => {
   const app = buildServer();
+  const loginRes = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: 'pass-@admin' } });
+  const cookie = (loginRes.headers['set-cookie'] || '').split(';')[0];
   const created = await app.inject({
     method: 'POST',
     url: '/api/share',
+    headers: { cookie },
     payload: { kind: 'bulk', data: { results: [{ ok: true, domain: 'a.com', verdict: 'clean' }] } },
   });
   assert.equal(created.statusCode, 200);
