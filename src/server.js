@@ -106,12 +106,8 @@ async function authOk(req, reply, scope) {
         return false;
       }
     }
-    // Role gate: key management changes who can access what, so it is the
-    // admin's alone. Everything else both roles can do.
-    if (scope === 'keys:write' && sess.role !== 'admin') {
-      reply.code(403).send({ ok: false, error: 'only the admin account can manage API keys' });
-      return false;
-    }
+    // Both roles can do everything, key management included; the operator
+    // wants the roles to differ in identity, not capability.
     req.user = sess.user;
     req.role = sess.role;
     return true;
