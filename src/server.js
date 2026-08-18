@@ -17,6 +17,7 @@ import { removalGuide, KIND_LABEL } from './lib/removal.js';
 import { readiness, stillListed } from './lib/delist.js';
 import { createShare, getShare, MAX_BYTES as SHARE_MAX_BYTES } from './lib/share.js';
 import { login, getSession, destroySession } from './lib/sessions.js';
+import { beat as visitorBeat, markBye, listVisitors, onlineWindowSeconds, newVisitorId, isVisitorId } from './lib/visitors.js';
 import { buildResolver } from './lib/resolve.js';
 import { ALL_ZONES, CATEGORIES } from './lib/zones.js';
 import { dbEnabled } from './db/pool.js';
@@ -160,6 +161,9 @@ function limited(req, cost = 1) {
 // deployment that has its own auth in front.
 const LOGIN_DISABLED = process.env.DBC_LOGIN_DISABLED === 'true';
 const COOKIE = 'dbc_sid';
+// Anonymous per-browser id for the Visitors page. Carries no privilege at all;
+// it only groups heartbeats from the same browser.
+const VISITOR_COOKIE = 'dbc_vid';
 
 function cookieVal(req, name) {
   const raw = req.headers.cookie;
@@ -404,6 +408,51 @@ export function buildServer() {
   // The share page itself is the normal UI; it reads the id from the path and
   // fetches the snapshot instead of running a live check.
   app.get('/r/:id', (req, reply) => reply.sendFile('index.html'));
+
+  // ---- Visitor presence (the admin Visitors page) ----
+  // Every open browser heartbeats here, logged in or not, share pages
+  // included. Public on purpose: the whole point is to see who arrived before
+  // they log in. Everything is bounded (rate limit, field caps, store cap) and
+  // nothing sent here is trusted beyond being displayed, escaped, to an admin.
+  app.post('/api/presence', async (req, reply) => {
+    if (rateLimited('presence:' + req.ip, 1, 120)) {
+      return reply.code(429).send({ ok: false });
+    }
+    let vid = cookieVal(req, VISITOR_COOKIE);
+    if (!isVisitorId(vid)) {
+      vid = newVisitorId();
+      const secure = process.env.DBC_COOKIE_SECURE === 'true' ? '; Secure' : '';
+      reply.header('set-cookie', `${VISITOR_COOKIE}=${vid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${365 * 24 * 3600}${secure}`);
+    }
+    // sendBeacon posts arrive as text/plain; parse both shapes.
+    let body = req.body;
+    if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+    if (!body || typeof body !== 'object') body = {};
+    if (body.bye) {
+      markBye(vid);
+      return { ok: true };
+    }
+    const sess = sessionOf(req);
+    visitorBeat(vid, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      user: sess?.user,
+      role: sess?.role,
+      client: body,
+    });
+    return { ok: true };
+  });
+
+  // The list is the admin's alone; the user role gets a 403, same policy as
+  // API key management.
+  app.get('/api/visitors', async (req, reply) => {
+    if (!LOGIN_DISABLED) {
+      const sess = sessionOf(req);
+      if (!sess) return reply.code(401).send({ ok: false, error: 'login required', login: true });
+      if (sess.role !== 'admin') return reply.code(403).send({ ok: false, error: 'only the admin account can see visitors' });
+    }
+    return { ok: true, onlineWindowSeconds: onlineWindowSeconds(), visitors: listVisitors() };
+  });
 
   // The scope catalog, so the create form and the docs stay in step with the
   // server rather than drifting from a hardcoded copy.

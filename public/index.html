@@ -420,6 +420,28 @@
     .key-item-meta { flex: none; text-align: right; }
     .key-del { padding: 8px 16px; font-size: 12.5px; flex: none; }
     .key-del.danger { border-color: var(--bad); color: var(--bad); }
+    /* Visitors page */
+    .vis-sum { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .vis-stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px 18px; display: flex; flex-direction: column; gap: 2px; min-width: 110px;
+      box-shadow: 0 1px 4px rgba(14,26,43,.05); }
+    .vis-stat b { font-size: 22px; font-weight: 800; }
+    .vis-stat .vis-live { color: var(--clean); }
+    .vis-stat span { font-size: 11.5px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+    .vis-item { margin-bottom: 12px; border-left: 3px solid var(--line); }
+    .vis-item.is-on { border-left-color: var(--clean); }
+    .vis-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .vis-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+    .vis-dot.on { background: var(--clean); box-shadow: 0 0 0 3px rgba(22,163,74,.18); animation: vispulse 2s infinite; }
+    @keyframes vispulse { 0%,100% { box-shadow: 0 0 0 3px rgba(22,163,74,.18); } 50% { box-shadow: 0 0 0 6px rgba(22,163,74,.08); } }
+    .vis-status { font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+    .vis-item.is-on .vis-status { color: var(--clean); }
+    .vis-who { font-weight: 700; }
+    .vis-agent { color: var(--muted); font-size: 13px; }
+    .vis-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px 18px; margin-top: 12px; }
+    .vis-kv { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .vis-k { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+    .vis-v { font-size: 13px; overflow-wrap: anywhere; }
     /* Method-tinted endpoint cards */
     .ep { border-left: 3px solid transparent; }
     .ep-get { border-left-color: var(--clean); }
@@ -464,6 +486,7 @@
         <div class="tab" data-tab="bulk" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg><span>Bulk list</span></div>
         <div class="tab" data-tab="auth" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10z"/><path d="M9 11.5l2 2 4-4.5"/></svg><span>Email auth</span></div>
         <div class="tab" data-tab="api" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg><span>API</span></div>
+        <div class="tab" data-tab="visitors" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Visitors</span></div>
       </nav>
       <div class="side-foot">
         <div class="side-user hidden" id="whoami">
@@ -562,6 +585,20 @@ mail.contoso.org"></textarea>
       </div>
     </section>
 
+    <!-- Visitors (admin only) -->
+    <section id="visitors-pane" class="hidden">
+      <div id="visitors-out"><div class="card empty">Loading visitors…</div></div>
+      <div class="card api-note" style="margin-top:14px">
+        <b>What this page can and cannot know</b>
+        <ul>
+          <li>Every browser that opens this site (the login screen and shared /r/ links included) reports itself here and keeps a heartbeat every 30 seconds while the tab is open.</li>
+          <li><b>Active</b> means a heartbeat arrived recently; <b>Offline</b> means the tab closed or went quiet.</li>
+          <li>A browser never reveals its owner's personal email address to a website. The account column is filled in only when the visitor signs in.</li>
+          <li>Presence lives in memory: restarting the server clears the list.</li>
+        </ul>
+      </div>
+    </section>
+
     <div id="removal-modal" class="modal hidden">
       <div class="modal-card">
         <button class="modal-x" id="removal-close" type="button">Close</button>
@@ -633,14 +670,15 @@ mail.contoso.org"></textarea>
           roleEl.textContent = me.role || '';
           roleEl.classList.toggle('r-user', me.role !== 'admin');
         }
-        // The API page is the admin's alone: the user role does not even see
-        // the menu item. The server enforces the underlying key routes too, so
-        // hiding the door is presentation, not the lock.
+        // The API and Visitors pages are the admin's alone: the user role does
+        // not even see the menu items. The server enforces the underlying
+        // routes too, so hiding the door is presentation, not the lock.
         const admin = me.role === 'admin' || me.loginEnabled === false;
-        const apiTab = document.querySelector('.tab[data-tab="api"]');
-        if (apiTab) {
-          apiTab.classList.toggle('hidden', !admin);
-          if (!admin && apiTab.classList.contains('active')) {
+        for (const name of ['api', 'visitors']) {
+          const tabEl = document.querySelector('.tab[data-tab="' + name + '"]');
+          if (!tabEl) continue;
+          tabEl.classList.toggle('hidden', !admin);
+          if (!admin && tabEl.classList.contains('active')) {
             const home = document.querySelector('.tab[data-tab="single"]');
             if (home) home.click();
           }
@@ -691,6 +729,7 @@ mail.contoso.org"></textarea>
         document.getElementById('login-pass').value = '';
         applyAuthUi();
         loadAppData();
+        presenceBeat(); // the Visitors page should switch this row from Guest to the account right away
       } catch (e2) {
         err.textContent = 'Request failed: ' + e2.message;
       } finally {
@@ -713,13 +752,14 @@ mail.contoso.org"></textarea>
     const scoreColor = (s) => (s >= 85 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)');
 
     // ---- tabs ----
-    const PANES = { single: 'single-pane', bulk: 'bulk-pane', auth: 'auth-pane', api: 'api-pane' };
+    const PANES = { single: 'single-pane', bulk: 'bulk-pane', auth: 'auth-pane', api: 'api-pane', visitors: 'visitors-pane' };
     // Each section carries its own heading, so the page always says where you are.
     const PAGE_HEADS = {
       single: ['Analyze', 'Check one domain against every blocklist, its DNS records, and the inbox providers.'],
       bulk: ['Bulk list', 'Check many domains at once. Results stream in as batches finish, and export to CSV.'],
       auth: ['Email authentication', 'SPF, DKIM, DMARC, MX and reverse DNS for the last analyzed domain.'],
       api: ['API', 'Every check as a plain HTTP request, with scoped keys and code samples.'],
+      visitors: ['Visitors', 'Every browser that opened this site: device, network and locale details, and who is here right now.'],
     };
     function setPageHead(tab) {
       const [t, sub] = PAGE_HEADS[tab] || PAGE_HEADS.single;
@@ -740,6 +780,7 @@ mail.contoso.org"></textarea>
           if (!apiRendered) { renderApi(); apiRendered = true; }
           loadKeyList();
         }
+        if (active === 'visitors') startVisitors(); else stopVisitors();
       };
       t.addEventListener('click', activate);
       t.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activate(); } });
@@ -912,6 +953,139 @@ mail.contoso.org"></textarea>
         box.innerHTML = '<div class="mini" style="padding:8px 0">Could not load keys: ' + esc(e.message) + '</div>';
       }
     }
+
+    // ================= VISITORS (admin) =================
+    // The list refreshes every 10 seconds while the tab is open, so Active and
+    // Offline stay live without a manual reload.
+    let visTimer = null;
+    function startVisitors() {
+      loadVisitors();
+      if (!visTimer) visTimer = setInterval(() => { if (!document.hidden) loadVisitors(); }, 10000);
+    }
+    function stopVisitors() {
+      if (visTimer) { clearInterval(visTimer); visTimer = null; }
+    }
+
+    // The visitor's own wall clock, from the timezone their browser reported.
+    function visitorLocalTime(v) {
+      try {
+        if (v.timezone) {
+          return new Intl.DateTimeFormat('en-GB', { timeZone: v.timezone, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()) + ' (' + v.timezone + ')';
+        }
+      } catch { /* unknown zone string */ }
+      if (typeof v.tzOffsetMin === 'number') {
+        const d = new Date(Date.now() - v.tzOffsetMin * 60000);
+        return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0') + ' (UTC' + (v.tzOffsetMin <= 0 ? '+' : '-') + Math.abs(v.tzOffsetMin / 60) + ')';
+      }
+      return '';
+    }
+
+    const agoFmt = (ms) => {
+      const s = Math.max(0, Math.round(ms / 1000));
+      if (s < 60) return s + 's ago';
+      if (s < 3600) return Math.round(s / 60) + 'm ago';
+      if (s < 86400) return Math.round(s / 3600) + 'h ago';
+      return Math.round(s / 86400) + 'd ago';
+    };
+
+    async function loadVisitors() {
+      const box = document.getElementById('visitors-out');
+      if (!box) return;
+      try {
+        const res = await fetch('/api/visitors');
+        if (sessionExpired(res)) return;
+        const j = await res.json();
+        if (!j.ok) { box.innerHTML = '<div class="card empty">' + esc(j.error || 'Could not load visitors.') + '</div>'; return; }
+        const vs = j.visitors || [];
+        const online = vs.filter((v) => v.online);
+        let h = '<div class="vis-sum">'
+          + '<div class="vis-stat"><b class="vis-live">' + online.length + '</b><span>active now</span></div>'
+          + '<div class="vis-stat"><b>' + (vs.length - online.length) + '</b><span>offline</span></div>'
+          + '<div class="vis-stat"><b>' + vs.length + '</b><span>browsers seen</span></div>'
+          + '<div class="vis-stat"><b>' + online.filter((v) => v.user && !v.loggedOut).length + '</b><span>signed in now</span></div>'
+          + '</div>';
+        if (!vs.length) {
+          h += '<div class="card empty">No visitors recorded yet. Open the site in another browser and it will appear here within seconds.</div>';
+        }
+        const kv = (k, val) => (val ? '<div class="vis-kv"><span class="vis-k">' + k + '</span><span class="vis-v">' + esc(String(val)) + '</span></div>' : '');
+        h += vs.map((v) => {
+          const who = v.user
+            ? esc(v.user) + (v.loggedOut ? ' <span class="mini">(signed out)</span>' : '')
+            : 'Guest <span class="mini">(not signed in)</span>';
+          return '<div class="card vis-item' + (v.online ? ' is-on' : '') + '">'
+            + '<div class="vis-head">'
+            + '<span class="vis-dot' + (v.online ? ' on' : '') + '"></span>'
+            + '<span class="vis-status">' + (v.online ? 'Active' : 'Offline') + '</span>'
+            + '<span class="vis-who">' + who + '</span>'
+            + (v.role && !v.loggedOut ? '<span class="who-role">' + esc(v.role) + '</span>' : '')
+            + '<span class="vis-agent">' + esc([v.browser, v.os, v.device].filter(Boolean).join(' · ')) + '</span>'
+            + '<span class="mini" style="margin-left:auto">last seen ' + agoFmt(Date.now() - v.lastSeen) + '</span>'
+            + '</div>'
+            + '<div class="vis-grid">'
+            + kv('IP address', v.ip)
+            + kv('Their local time', visitorLocalTime(v))
+            + kv('Language', (v.languages && v.languages.length ? v.languages.join(', ') : v.language))
+            + kv('Screen', v.screen ? v.screen + (v.dpr ? ' @' + v.dpr + 'x' : '') : '')
+            + kv('Window', v.viewport)
+            + kv('CPU cores', v.cores)
+            + kv('Memory', v.memoryGb ? '~' + v.memoryGb + ' GB' : '')
+            + kv('Touch screen', v.touch === true ? 'yes' : v.touch === false ? 'no' : '')
+            + kv('Connection', v.connection)
+            + kv('On page', v.page)
+            + kv('Came from', v.referrer)
+            + kv('First seen', new Date(v.firstSeen).toLocaleString())
+            + kv('Heartbeats', v.hits)
+            + '</div>'
+            + '</div>';
+        }).join('');
+        box.innerHTML = h;
+      } catch (e) {
+        box.innerHTML = '<div class="card empty">Could not load visitors: ' + esc(e.message) + '</div>';
+      }
+    }
+
+    // ================= PRESENCE HEARTBEAT =================
+    // Every open tab announces itself: once now, then every 30 seconds while
+    // visible, and a goodbye beacon when the tab closes. This is what feeds the
+    // admin Visitors page. It runs for everyone, signed in or not.
+    function presenceInfo() {
+      const activeTab = document.querySelector('.tab.active');
+      return {
+        page: IS_SHARE_PAGE ? 'shared report' : (!me.authenticated && me.loginEnabled !== false) ? 'login screen' : (activeTab ? activeTab.textContent.trim() : ''),
+        path: location.pathname,
+        referrer: document.referrer || null,
+        language: navigator.language || null,
+        languages: Array.isArray(navigator.languages) ? navigator.languages.slice(0, 6) : null,
+        timezone: (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || null,
+        tzOffsetMin: new Date().getTimezoneOffset(),
+        screen: screen.width + 'x' + screen.height,
+        viewport: window.innerWidth + 'x' + window.innerHeight,
+        dpr: window.devicePixelRatio || 1,
+        cores: navigator.hardwareConcurrency || null,
+        memoryGb: navigator.deviceMemory || null,
+        touch: (navigator.maxTouchPoints || 0) > 0,
+        cookieEnabled: navigator.cookieEnabled,
+        platform: navigator.platform || null,
+        connection: (navigator.connection && navigator.connection.effectiveType) || null,
+      };
+    }
+    function presenceBeat() {
+      try {
+        fetch('/api/presence', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(presenceInfo()),
+          keepalive: true,
+        }).catch(() => {});
+      } catch { /* never let telemetry break the page */ }
+    }
+    presenceBeat();
+    setInterval(() => { if (!document.hidden) presenceBeat(); }, 30000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) presenceBeat(); });
+    window.addEventListener('pagehide', () => {
+      try { navigator.sendBeacon('/api/presence', new Blob([JSON.stringify({ bye: true })], { type: 'application/json' })); } catch { /* best effort */ }
+    });
+
     // ---------------- Create API key ----------------
     // A key is made for one job, so the form makes you say which job. The scope
     // catalog comes from /api/scopes rather than a copy kept here, so it cannot
