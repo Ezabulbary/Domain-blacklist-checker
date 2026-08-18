@@ -74,7 +74,7 @@ test('resultsToCsv produces a header and one row per result, escaping commas', a
   const { results } = await checkMany(['listed.com', 'bad..domain'], { checkFn: fakeCheck });
   const csv = resultsToCsv(results);
   const lines = csv.split('\n');
-  assert.match(lines[0], /^input,domain,verdict,score/);
+  assert.match(lines[0], /^input,domain,provider,mx_hosts,verdict,score/);
   assert.equal(lines.length, 3); // header + 2 rows
   assert.ok(csv.includes('listed.com'));
   assert.ok(csv.includes('invalid'));

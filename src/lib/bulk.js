@@ -101,6 +101,7 @@ async function auditDomain(input, opts = {}) {
     ok: true,
     input: r.input,
     domain: r.domain,
+    provider: r.provider || null,
     verdict: bl.verdict,
     score: bl.score,
     riskScore: r.riskScore,
@@ -154,9 +155,10 @@ function summarize(results, tookMs) {
  */
 export function resultsToCsv(results) {
   const withAuth = results.some((r) => r && r.auth);
-  const head = ['input', 'domain', 'verdict', 'score', 'listed', 'clean', 'unknown', 'a_records', 'listings', 'error'];
+  const head = ['input', 'domain', 'provider', 'mx_hosts', 'verdict', 'score', 'listed', 'clean', 'unknown', 'a_records', 'listings', 'error'];
   if (withAuth) {
-    head.splice(2, 0, 'risk_score', 'auth_score', 'spf', 'spf_policy', 'dkim', 'dkim_selectors', 'dmarc', 'dmarc_policy', 'mx', 'ptr');
+    // After input, domain, provider, mx_hosts. Keep in step with the data rows.
+    head.splice(4, 0, 'risk_score', 'auth_score', 'spf', 'spf_policy', 'dkim', 'dkim_selectors', 'dmarc', 'dmarc_policy', 'mx', 'ptr');
   }
   const rows = [head.join(',')];
   for (const r of results) {
@@ -170,6 +172,8 @@ export function resultsToCsv(results) {
       ? [
           r.input,
           r.domain,
+          r.provider?.name ?? '',
+          (r.dns?.mx || []).join(' '),
           ...authCells,
           r.verdict,
           r.score,
@@ -180,7 +184,7 @@ export function resultsToCsv(results) {
           (r.listings || []).map((l) => `${l.subject}@${l.zone}`).join(' '),
           '',
         ]
-      : [r.input, '', ...(withAuth ? authCells.map(() => '') : []), 'invalid', '', '', '', '', '', '', r.error];
+      : [r.input, '', '', '', ...(withAuth ? authCells.map(() => '') : []), 'invalid', '', '', '', '', '', '', r.error];
     rows.push(cells.map(csvCell).join(','));
   }
   return rows.join('\n');

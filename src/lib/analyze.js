@@ -36,6 +36,7 @@ export async function analyzeDomain(input, opts = {}) {
     domain: bl.domain,
     isIp: bl.isIp,
     resolvesTo: bl.resolvesTo,
+    provider: bl.provider,
     dnsError: bl.dnsError,
     checkedAt: bl.checkedAt,
     tookMs: bl.tookMs,

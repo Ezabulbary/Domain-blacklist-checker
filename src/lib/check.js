@@ -3,6 +3,7 @@ import { buildResolver, resolveDomain, reverseIp, queryZone } from './resolve.js
 import { IP_ZONES, DOMAIN_ZONES, RETURN_CODES } from './zones.js';
 import { scoreResults } from './score.js';
 import { getCalibration, isTrusted } from './calibrate.js';
+import { detectProvider } from './provider.js';
 
 /**
  * End-to-end check for one domain (mxtoolbox-style):
@@ -131,6 +132,9 @@ export async function checkDomain(input, opts = {}) {
     host: norm.host,
     isIp: norm.isIp,
     resolvesTo: dns.a,
+    // Who handles this domain's mail, read from the MX hosts. An IP literal has
+    // no MX to read, so it gets no provider rather than a made-up one.
+    provider: norm.isIp ? null : detectProvider(dns.mx),
     dnsError,
     dns: { a: dns.a, aaaa: dns.aaaa, mx: dns.mx, errors: dns.errors },
     zonesChecked,

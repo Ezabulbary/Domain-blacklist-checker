@@ -15,6 +15,7 @@ import { SCOPES, ALL_SCOPE, hasScope, normalizeScopes } from './lib/scopes.js';
 import { getCalibration, isTrusted, summarize } from './lib/calibrate.js';
 import { removalGuide, KIND_LABEL } from './lib/removal.js';
 import { readiness, stillListed } from './lib/delist.js';
+import { createShare, getShare, MAX_BYTES as SHARE_MAX_BYTES } from './lib/share.js';
 import { buildResolver } from './lib/resolve.js';
 import { ALL_ZONES, CATEGORIES } from './lib/zones.js';
 import { dbEnabled } from './db/pool.js';
@@ -255,6 +256,39 @@ export function buildServer() {
     const listed = await stillListed(zone, subject, resolver);
     return { ok: true, zone, subject, listed, checkedAt: new Date().toISOString() };
   });
+
+  // Freeze a result as a shareable snapshot. Anyone with the link can view it
+  // at /r/<id>; the id is 128 random bits and the only secret.
+  app.post('/api/share', async (req, reply) => {
+    if (!(await authOk(req, reply))) return;
+    if (limited(req, 2)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    try {
+      const r = await createShare(body.kind, body.data);
+      return {
+        ok: true,
+        id: r.id,
+        url: '/r/' + r.id,
+        expiresAt: r.expiresAt,
+        persisted: r.persisted,
+        note: r.persisted
+          ? null
+          : 'No database is configured, so this link is held in memory and dies when the server restarts. Set DATABASE_URL to keep share links.',
+      };
+    } catch (e) {
+      return reply.code(400).send({ ok: false, error: e.message, maxBytes: SHARE_MAX_BYTES });
+    }
+  });
+
+  app.get('/api/share/:id', async (req, reply) => {
+    const snap = await getShare(req.params.id);
+    if (!snap) return reply.code(404).send({ ok: false, error: 'this link does not exist or has expired' });
+    return { ok: true, kind: snap.kind, data: snap.payload, createdAt: snap.createdAt, expiresAt: snap.expiresAt };
+  });
+
+  // The share page itself is the normal UI; it reads the id from the path and
+  // fetches the snapshot instead of running a live check.
+  app.get('/r/:id', (req, reply) => reply.sendFile('index.html'));
 
   // The scope catalog, so the create form and the docs stay in step with the
   // server rather than drifting from a hardcoded copy.

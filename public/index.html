@@ -368,6 +368,7 @@ mail.contoso.org"></textarea>
         <label class="toggle"><input type="checkbox" id="bulk-auth" checked> Also check SPF, DKIM and DMARC</label>
         <label class="file">Upload .txt/.csv<input type="file" id="bulk-file" accept=".txt,.csv,.lst,text/plain,text/csv" /></label>
         <button id="bulk-csv" class="ghost hidden" type="button">Download CSV</button>
+        <button id="bulk-share" class="ghost hidden" type="button">Copy shareable link</button>
         <span class="spacer"></span>
         <span class="hint" id="bulk-count">0 domains</span>
       </div>
@@ -417,6 +418,7 @@ mail.contoso.org"></textarea>
           <li>A row's <code>state</code> is <code>listed</code> / <code>ok</code> / <code>timeout</code>. A <b>timeout is never treated as clean</b>.</li>
           <li>Rate limit: <code>DBC_RATE_MAX</code> requests/min per IP (default 30). Bulk costs more, in proportion to the domain count. A 429 means slow down.</li>
           <li>Bulk is capped at <code>DBC_BULK_MAX</code> domains (default 500); add <code>?format=csv</code> to get a CSV download.</li>
+          <li><b>Share links:</b> <code>POST /api/share</code> with <code>{ "kind": "single"|"bulk", "data": {...} }</code> freezes a result and returns <code>/r/&lt;id&gt;</code>, viewable by anyone with the link. Links expire after <code>DBC_SHARE_TTL_DAYS</code> (default 90); without <code>DATABASE_URL</code> they live in memory and die on restart.</li>
         </ul>
       </div>
     </section>
@@ -846,6 +848,34 @@ mail.contoso.org"></textarea>
     });
 
     let report = null;          // full /api/analyze response
+    // When the page was opened through a share link (/r/<id>), this holds the
+    // snapshot envelope and switches the UI to read-only snapshot rendering.
+    let sharedView = null;
+
+    // Freeze the current result on the server and put the link on the clipboard.
+    async function shareSnapshot(kind, data, btn, noteEl) {
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Creating link…';
+      try {
+        const res = await fetch('/api/share', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind, data }),
+        });
+        const j = await res.json();
+        if (!j.ok) throw new Error(j.error || 'could not create the link');
+        const url = location.origin + j.url;
+        try { await navigator.clipboard.writeText(url); btn.textContent = 'Link copied!'; }
+        catch { btn.textContent = 'Link ready'; }
+        if (noteEl) {
+          noteEl.textContent = url + (j.persisted ? '' : ' · kept in memory, dies on server restart (set DATABASE_URL to keep links)');
+        }
+      } catch (e) {
+        btn.textContent = 'Failed';
+        if (noteEl) noteEl.textContent = e.message;
+      }
+      setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2600);
+    }
     let blStatus = 'all';       // all | listed | timeout | ok | skipped
     let blCategory = 'all';
 
@@ -885,6 +915,10 @@ mail.contoso.org"></textarea>
       report = d;
       const bl = d.blacklist;
       let h = '';
+      if (sharedView) {
+        h += '<div class="card banner">Shared snapshot from ' + esc((d.checkedAt || sharedView.createdAt || '').slice(0, 10))
+          + '. These results reflect that moment, not right now.</div>';
+      }
 
       // --- DNS-failure banner: the resolver couldn't reach a DNS server, so
       // nothing resolves and every domain looks empty/identical. ---
@@ -907,6 +941,7 @@ mail.contoso.org"></textarea>
       // The whole verdict at a glance: counts as chips, then which lists, then
       // the DNS record health in one row. Detail lives behind the fold below.
       h += '<div class="sumchips">'
+        + (d.provider ? '<span class="chip"><b>' + esc(d.provider.name) + '</b></span>' : '')
         + '<span class="chip ' + (bl.listedCount ? 'c-bad' : 'c-ok') + '"><b>' + bl.listedCount + '</b> listed</span>'
         + '<span class="chip c-ok"><b>' + bl.okCount + '</b> clean</span>'
         + (bl.timeoutCount ? '<span class="chip c-warn"><b>' + bl.timeoutCount + '</b> no answer</span>' : '')
@@ -929,7 +964,11 @@ mail.contoso.org"></textarea>
           if (rec.status === 'pass') return [presentWord || 'pass', 'c-ok'];
           return ['weak', 'c-warn'];
         };
-        const parts = [['SPF', st(d.auth.spf)], ['DKIM', d.auth.dkim && d.auth.dkim.present ? ['pass', 'c-ok'] : ['none found', 'c-warn']], ['DMARC', st(d.auth.dmarc)]];
+        const mxSt = d.auth.mx
+          ? (d.auth.mx.status === 'unknown' ? ['not checked', 'c-mute']
+            : d.auth.mx.present ? [d.auth.mx.records.length + ' record' + (d.auth.mx.records.length > 1 ? 's' : ''), 'c-ok'] : ['none', 'c-warn'])
+          : null;
+        const parts = [['MX', mxSt], ['SPF', st(d.auth.spf)], ['DKIM', d.auth.dkim && d.auth.dkim.present ? ['pass', 'c-ok'] : ['none found', 'c-warn']], ['DMARC', st(d.auth.dmarc)]];
         h += '<div class="authchips"><span class="lbl">DNS records</span>'
           + parts.filter((x) => x[1]).map(([n, v]) => '<span class="chip ' + v[1] + '">' + n + ' ' + esc(v[0]) + '</span>').join('')
           + '<a href="#" id="goto-auth" class="mini">full details in the Email auth tab</a></div>';
@@ -937,6 +976,10 @@ mail.contoso.org"></textarea>
       h += '<div class="dns"><div><b>A</b> ' + (esc(d.dns.a.join(', ')) || 'None') + '</div>'
         + (d.dns.aaaa.length ? '<div><b>AAAA</b> ' + esc(d.dns.aaaa.join(', ')) + '</div>' : '')
         + '<div><b>MX</b> ' + (esc(d.dns.mx.join(', ')) || 'None') + '</div></div>';
+      if (!sharedView) {
+        h += '<div style="margin-top:12px"><button class="ghost" id="share-single" type="button">Copy shareable link</button>'
+          + ' <span class="mini" id="share-single-note"></span></div>';
+      }
       h += '</div></div>';
 
       // --- auth cards ---
@@ -1118,6 +1161,9 @@ mail.contoso.org"></textarea>
         document.querySelectorAll('#cat-tabs .cat').forEach((x) => x.classList.toggle('active', x === el));
         redrawBlTable();
       }));
+      const sh = document.getElementById('share-single');
+      if (sh) sh.addEventListener('click', () =>
+        shareSnapshot('single', report, sh, document.getElementById('share-single-note')));
       const ga = document.getElementById('goto-auth');
       if (ga) ga.addEventListener('click', (ev) => {
         ev.preventDefault();
@@ -1372,7 +1418,7 @@ mail.contoso.org"></textarea>
         elStatus.textContent = (cancel && done < total ? 'Stopped after ' + done + ' of ' + total : 'Checked ' + done + ' domains')
           + ' in ' + fmtLeft(Date.now() - started);
         if (overflow) elNote.textContent += ' · ' + overflow + ' domains over the ' + MAX_TOTAL + ' limit were not checked';
-        if (done) bCsv.classList.remove('hidden');
+        if (done) { bCsv.classList.remove('hidden'); document.getElementById('bulk-share').classList.remove('hidden'); }
       } finally {
         running = false; cancel = false;
         bGo.textContent = 'Check all';
@@ -1389,6 +1435,47 @@ mail.contoso.org"></textarea>
       }
       return t;
     }
+
+    document.getElementById('bulk-share').addEventListener('click', (ev) =>
+      shareSnapshot('bulk', { results: lastResults }, ev.currentTarget, document.getElementById('bulk-note')));
+
+    // Render a shared bulk snapshot: the same final table, no live machinery.
+    function renderSharedBulk(snap) {
+      const t = tally(lastResults);
+      bOut.innerHTML = '<div class="card" id="bulk-live">'
+        + '<div id="bulk-status">Shared snapshot of ' + lastResults.length + ' domains, from '
+        + esc(String(snap.createdAt || '').slice(0, 10)) + '. Results reflect that moment, not right now.</div>'
+        + '<div class="meta" style="margin-top:8px" id="bulk-note">' + t.listed + ' listed, ' + t.clean + ' clean, '
+        + t.unknown + ' unknown, ' + t.invalid + ' could not be checked</div>'
+        + '<div class="table-scroll" id="bulk-table" style="margin-top:14px">' + renderTable() + '</div></div>';
+      wireSort();
+      bCsv.classList.remove('hidden');
+    }
+
+    // A share link opens the normal UI; instead of running anything we fetch
+    // the frozen snapshot and render it.
+    (async function loadShared() {
+      const m = location.pathname.match(/^\/r\/([0-9a-f]{32})$/);
+      if (!m) return;
+      try {
+        const res = await fetch('/api/share/' + m[1]);
+        const j = await res.json();
+        if (!j.ok) {
+          sOut.innerHTML = '<div class="card err">✗ ' + esc(j.error || 'this link does not exist or has expired') + '</div>';
+          return;
+        }
+        sharedView = j;
+        if (j.kind === 'single') {
+          renderAnalyze(j.data);
+        } else {
+          document.querySelector('.tab[data-tab="bulk"]').click();
+          lastResults = (j.data.results || []).filter(Boolean);
+          renderSharedBulk(j);
+        }
+      } catch (e) {
+        sOut.innerHTML = '<div class="card err">Request failed: ' + esc(e.message) + '</div>';
+      }
+    })();
 
     bCsv.addEventListener('click', () => {
       const csv = toCsv(lastResults);
@@ -1422,6 +1509,7 @@ mail.contoso.org"></textarea>
       const arrow = (k) => (sortKey === k ? (sortDir === 1 ? ' \u25B2' : ' \u25BC') : '');
       let h = '<table><thead><tr>'
         + '<th data-k="domain">Domain' + arrow('domain') + '</th>'
+        + '<th>Provider</th><th>MX</th>'
         + '<th data-k="verdict">Blocklists' + arrow('verdict') + '</th>'
         + '<th data-k="score">Score' + arrow('score') + '</th>';
       if (withAuth) h += '<th>SPF</th><th>DKIM</th><th>DMARC</th>';
@@ -1439,7 +1527,7 @@ mail.contoso.org"></textarea>
 
       for (const r of rows) {
         if (!r.ok) {
-          h += '<tr><td>' + esc(r.input) + '</td><td><span class="badge b-invalid">invalid</span></td>'
+          h += '<tr><td>' + esc(r.input) + '</td><td></td><td></td><td><span class="badge b-invalid">invalid</span></td>'
             + '<td class="score-cell">n/a</td>' + (withAuth ? '<td></td><td></td><td></td>' : '')
             + '<td class="mini">' + esc(r.error) + '</td></tr>';
           continue;
@@ -1448,9 +1536,12 @@ mail.contoso.org"></textarea>
         const ls = r.listings || [];
         const ips = (r.dns && r.dns.a) || [];
         const listings = ls.length ? ls.map((l) => esc(l.zone)).join(', ') : '<span class="mini">None</span>';
+        const mxN = (r.dns && r.dns.mx) ? r.dns.mx.length : 0;
         h += '<tr class="' + rowCls + '"><td>' + esc(r.domain)
           + (ips.length ? ' <span class="mini">' + esc(ips[0]) + (ips.length > 1 ? ' +' + (ips.length - 1) : '') + '</span>' : '')
           + '</td>'
+          + '<td class="mini">' + esc((r.provider && r.provider.name) || '') + '</td>'
+          + '<td class="' + (mxN ? 'a-ok' : 'a-warn') + '">' + (mxN || 'none') + '</td>'
           + '<td><span class="badge b-' + r.verdict + '">' + esc(r.verdict) + '</span></td>'
           + '<td class="score-cell">' + fmtScore(r.score, true) + '</td>';
         if (withAuth) {
@@ -1477,8 +1568,8 @@ mail.contoso.org"></textarea>
 
     function toCsv(results) {
       const withAuth = results.some((r) => r.auth);
-      const head = ['input', 'domain', 'verdict', 'score', 'listed', 'clean', 'unknown', 'a_records', 'listings', 'error'];
-      if (withAuth) head.splice(2, 0, 'risk_score', 'auth_score', 'spf', 'dkim', 'dmarc', 'dmarc_policy', 'mx', 'ptr');
+      const head = ['input', 'domain', 'provider', 'mx_hosts', 'verdict', 'score', 'listed', 'clean', 'unknown', 'a_records', 'listings', 'error'];
+      if (withAuth) head.splice(4, 0, 'risk_score', 'auth_score', 'spf', 'dkim', 'dmarc', 'dmarc_policy', 'mx', 'ptr');
       const cell = (v) => {
         let s = String(v ?? '');
         if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // block spreadsheet formula injection
@@ -1491,11 +1582,11 @@ mail.contoso.org"></textarea>
           ? [r.riskScore ?? '', a.score ?? '', a.spf ?? '', a.dkim ?? '', a.dmarc ?? '', a.dmarcPolicy ?? '', a.mx ?? '', a.ptr ?? '']
           : [];
         const row = r.ok
-          ? [r.input, r.domain, ...authCells, r.verdict, r.score,
+          ? [r.input, r.domain, (r.provider && r.provider.name) || '', ((r.dns && r.dns.mx) || []).join(' '), ...authCells, r.verdict, r.score,
              (r.counts || {}).listed ?? '', (r.counts || {}).clean ?? '', (r.counts || {}).unknown ?? '',
              ((r.dns && r.dns.a) || []).join(' '),
              (r.listings || []).map((l) => l.subject + '@' + l.zone).join(' '), '']
-          : [r.input, '', ...authCells.map(() => ''), 'invalid', '', '', '', '', '', '', r.error];
+          : [r.input, '', '', '', ...authCells.map(() => ''), 'invalid', '', '', '', '', '', '', r.error];
         lines.push(row.map(cell).join(','));
       }
       return lines.join('\n');
