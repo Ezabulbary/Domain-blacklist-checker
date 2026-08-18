@@ -774,7 +774,7 @@ mail.contoso.org"></textarea>
         + (k.scopes || []).map((s) => '<span class="scope-chip' + (s === ALL_SCOPE ? ' is-all' : '') + '">' + esc(s) + '</span> ').join('')
         + '</div>';
       if (!data.persisted) {
-        h += '<div class="f-note"><span class="i">i</span><span>No database is configured, so this key is held in memory and is lost when the server restarts. Set <b>DATABASE_URL</b> to keep keys.</span></div>';
+        h += '<div class="f-note"><span class="i">i</span><span>' + esc(data.note || 'This key is held in memory and is lost when the server restarts.') + '</span></div>';
       }
       h += '<div class="modal-actions"><span class="spacer"></span>'
         + '<button class="ghost" type="button" id="new-key-copy">Copy</button>'

@@ -345,10 +345,13 @@ export function buildServer() {
         requireKey: REQUIRE_KEY,
         note: r.persisted
           ? 'Copy this key now. It is stored only as a hash and cannot be shown again.'
-          : 'Copy this key now. It cannot be shown again, and with no DATABASE_URL configured it is held in memory and lost on restart.',
+          : r.dbFailed
+            ? 'Copy this key now. The configured database could not be reached, so this key is held in memory and stops working when the server restarts. Check DATABASE_URL in .env.'
+            : 'Copy this key now. It cannot be shown again, and with no DATABASE_URL configured it is held in memory and lost on restart.',
       };
     } catch (e) {
-      return reply.code(500).send({ ok: false, error: e.message });
+      req.log?.error?.(e);
+      return reply.code(500).send({ ok: false, error: 'could not create the key, try again shortly' });
     }
   });
 

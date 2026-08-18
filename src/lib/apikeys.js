@@ -56,13 +56,25 @@ export async function createApiKey({ name, scopes, email } = {}) {
   const granted = clean.length ? clean : [ALL_SCOPE];
 
   if (dbEnabled()) {
-    let userId = null;
-    if (email && String(email).trim()) {
-      const u = await db.users.upsertUserByEmail({ email: String(email).trim() });
-      userId = u?.id ?? null;
+    // A configured-but-unreachable database (bad DATABASE_URL, network down)
+    // must not stop keys from being issued. The key falls back to the bounded
+    // memory store and the response says so, instead of surfacing a raw
+    // resolver error where the key should be.
+    try {
+      let userId = null;
+      if (email && String(email).trim()) {
+        const u = await db.users.upsertUserByEmail({ email: String(email).trim() });
+        userId = u?.id ?? null;
+      }
+      const row = await db.apikeys.createKey({ userId, name: label, keyHash, keyPrefix, scopes: granted });
+      return { apiKey, key: publicRow(row), persisted: true, invalidScopes: invalid };
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[keys] database write failed, keeping the key in memory:', e.message);
+      const row = { id: ++memId, name: label, prefix: keyPrefix, scopes: granted, createdAt: new Date().toISOString(), revokedAt: null };
+      mem.set(keyHash, row);
+      return { apiKey, key: publicRow(row), persisted: false, dbFailed: true, invalidScopes: invalid };
     }
-    const row = await db.apikeys.createKey({ userId, name: label, keyHash, keyPrefix, scopes: granted });
-    return { apiKey, key: publicRow(row), persisted: true, invalidScopes: invalid };
   }
 
   const row = { id: ++memId, name: label, prefix: keyPrefix, scopes: granted, createdAt: new Date().toISOString(), revokedAt: null };
@@ -79,16 +91,35 @@ export async function validateApiKey(apiKey) {
   const keyHash = hash(apiKey);
 
   if (dbEnabled()) {
-    const row = await db.apikeys.getByHash(keyHash);
-    if (row) {
-      // Best effort. A slow write here would tax every authenticated request.
-      db.apikeys.touch(row.id).catch(() => {});
-      return { scopes: row.scopes, keyId: row.id, name: row.name, userId: row.user_id, plan: 'free' };
+    try {
+      const row = await db.apikeys.getByHash(keyHash);
+      if (row) {
+        // Best effort. A slow write here would tax every authenticated request.
+        db.apikeys.touch(row.id).catch(() => {});
+        return { scopes: row.scopes, keyId: row.id, name: row.name, userId: row.user_id, plan: 'free' };
+      }
+      // Legacy: a key issued before scopes existed, stored plainly on the user
+      // row. Still honoured, with full access, so upgrading breaks nobody.
+      const u = await db.users.getUserByApiKey(apiKey);
+      if (u) return { scopes: [ALL_SCOPE], keyId: null, name: 'legacy key', userId: u.id, plan: u.plan, legacy: true };
+    } catch (e) {
+      // The database is unreachable. A key issued during the outage lives in
+      // memory and still verifies; anything else genuinely cannot be checked,
+      // and guessing either way (valid or invalid) would be wrong, so that
+      // case stays a thrown error for the route to turn into a clear 503.
+      // eslint-disable-next-line no-console
+      console.error('[keys] database read failed, checking the memory store:', e.message);
+      const m2 = mem.get(keyHash);
+      // A key the memory store knows about has a definite answer even during
+      // the outage: live keys verify, revoked keys are invalid. Only a key
+      // with no record anywhere is genuinely unverifiable.
+      if (m2) return m2.revokedAt ? null : { scopes: m2.scopes, keyId: m2.id, name: m2.name, plan: 'free' };
+      throw new Error('database unreachable, cannot verify this key');
     }
-    // Legacy: a key issued before scopes existed, stored plainly on the user
-    // row. Still honoured, with full access, so upgrading breaks nobody.
-    const u = await db.users.getUserByApiKey(apiKey);
-    if (u) return { scopes: [ALL_SCOPE], keyId: null, name: 'legacy key', userId: u.id, plan: u.plan, legacy: true };
+    // DB answered "no such key"; a memory key from an earlier outage may still
+    // exist on this instance.
+    const m3 = mem.get(keyHash);
+    if (m3 && !m3.revokedAt) return { scopes: m3.scopes, keyId: m3.id, name: m3.name, plan: 'free' };
     return null;
   }
 
@@ -98,14 +129,26 @@ export async function validateApiKey(apiKey) {
 }
 
 export async function listApiKeys(userId = null) {
-  if (dbEnabled()) return (await db.apikeys.listKeys(userId)).map(publicRow);
+  if (dbEnabled()) {
+    try {
+      return (await db.apikeys.listKeys(userId)).map(publicRow);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[keys] database list failed, listing memory keys:', e.message);
+    }
+  }
   return [...mem.values()].map(publicRow);
 }
 
 export async function revokeApiKey(id) {
   if (dbEnabled()) {
-    const row = await db.apikeys.revokeKey(id);
-    return row ? publicRow(row) : null;
+    try {
+      const row = await db.apikeys.revokeKey(id);
+      if (row) return publicRow(row);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[keys] database revoke failed, trying the memory store:', e.message);
+    }
   }
   for (const [h, r] of mem) {
     if (String(r.id) === String(id) && !r.revokedAt) {
