@@ -82,7 +82,7 @@ test('bad credentials get a generic 401', async () => {
   await app.close();
 });
 
-test('both roles can check domains and create API keys', async () => {
+test('the user role checks domains but cannot manage API keys', async () => {
   const app = buildServer();
   const { cookie } = await loginAs(app, 'user', 'pass@user');
 
@@ -91,10 +91,10 @@ test('both roles can check domains and create API keys', async () => {
 
   const mk = await app.inject({
     method: 'POST', url: '/api/keys', headers: { cookie },
-    payload: { name: 'made by the user role', scopes: ['check:read'] },
+    payload: { name: 'x', scopes: ['check:read'] },
   });
-  assert.equal(mk.statusCode, 200, 'the operator wants both accounts able to create keys');
-  assert.match(mk.json().apiKey, /^dbc_/);
+  assert.equal(mk.statusCode, 403, 'key management is the admin account alone');
+  assert.match(mk.json().error, /admin/);
   await app.close();
 });
 
