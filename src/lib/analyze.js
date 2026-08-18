@@ -30,6 +30,26 @@ export async function analyzeDomain(input, opts = {}) {
   const risk = riskScore({ bl, auth });
   const recommendations = recommend({ auth, table: bl.table });
 
+  // The complete DNS record set for the Email auth page: NS and the full TXT
+  // list on top of what the check already resolved. Failures read as empty,
+  // never as errors; a record page must not die because one lookup was slow.
+  let dnsRecords = null;
+  if (!bl.isIp) {
+    // Guarded call: a resolver may not implement every method (test stubs,
+    // minimal custom resolvers), and a missing method throws synchronously,
+    // which is not the same failure as a lookup that errored. A failure comes
+    // back as null, never as [] - "could not look up" and "none published" are
+    // different answers and the page must not show a timeout as "no records".
+    const safe = (fn) => {
+      try { return Promise.resolve(fn()).catch(() => null); } catch { return Promise.resolve(null); }
+    };
+    const [ns, txt] = await Promise.all([
+      safe(() => resolver.resolveNs(bl.domain)),
+      safe(() => resolver.resolveTxt(bl.domain)).then((r) => (r ? r.map((x) => (Array.isArray(x) ? x.join('') : String(x))) : null)),
+    ]);
+    dnsRecords = { ns, txt };
+  }
+
   return {
     ok: true,
     input,
@@ -84,6 +104,7 @@ export async function analyzeDomain(input, opts = {}) {
     },
 
     dns: bl.dns,
+    dnsRecords,
 
     // ESP-sourced engagement/reputation metrics. These are NOT derivable from
     // DNS. They come from the sender's ESP/MTA. We surface whatever is provided

@@ -280,9 +280,6 @@
     .lang.active { color: #fff; border-color: transparent; background: linear-gradient(180deg, var(--accent), var(--accent2)); box-shadow: 0 2px 8px rgba(13,111,248,.30); }
     .key-card { padding: 16px 18px; }
     .key-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-    .key-box { display: flex; gap: 8px; margin-top: 12px; }
-    .key-box input { flex: 1; font-family: ui-monospace, monospace; font-size: 13px; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line2); background: var(--bg2); color: var(--clean); }
-    .key-box .ghost { padding: 9px 14px; font-size: 13px; }
     .ep.card { padding: 18px 20px; }
     .ep-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .m { font-size: 11px; font-weight: 800; letter-spacing: .03em; padding: 3px 9px; border-radius: 6px; }
@@ -400,6 +397,46 @@
     .login-err { color: var(--bad); font-size: 13px; min-height: 18px; margin: 10px 0 2px; }
     .login-card button[type="submit"] { width: 100%; margin-top: 8px; }
     /* Who is logged in, top right of the page. */
+    /* API hero strip */
+    .api-hero { display: flex; gap: 24px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 16px; padding: 26px 28px; margin-bottom: 18px; color: #fff;
+      box-shadow: 0 8px 28px rgba(13,111,248,.30); }
+    .api-hero h3 { margin: 0 0 6px; font-size: 19px; color: #fff; text-transform: none; letter-spacing: -.01em; }
+    .api-hero p { margin: 0 0 12px; font-size: 13.5px; color: rgba(255,255,255,.85); max-width: 520px; }
+    .api-hero-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .hero-chip { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25);
+      padding: 5px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+    .api-hero .api-base { color: rgba(255,255,255,.9); }
+    .api-hero .api-base input { background: rgba(255,255,255,.94); color: var(--fg); border-color: transparent; }
+    /* Key list */
+    .key-list { margin-top: 14px; }
+    .key-item { display: flex; gap: 14px; align-items: center; padding: 13px 2px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+    .key-item-main { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 5px; }
+    .key-item-name { font-weight: 700; font-size: 14px; }
+    .key-item-mask { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+      color: var(--muted); letter-spacing: .08em; }
+    .key-item-scopes { display: flex; gap: 5px; flex-wrap: wrap; }
+    .key-item-meta { flex: none; text-align: right; }
+    .key-del { padding: 8px 16px; font-size: 12.5px; flex: none; }
+    .key-del.danger { border-color: var(--bad); color: var(--bad); }
+    /* Method-tinted endpoint cards */
+    .ep { border-left: 3px solid transparent; }
+    .ep-get { border-left-color: var(--clean); }
+    .ep-post { border-left-color: var(--accent); }
+    .ep-delete { border-left-color: var(--bad); }
+    /* A shared snapshot is read-only: viewers see the result, they do not get
+       search boxes that would only answer 401. */
+    body.share-view #single-form, body.share-view #lists-hint,
+    body.share-view #bulk-form, body.share-view .bulk-controls,
+    body.share-view #goto-auth { display: none; }
+    .dns-tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    .dns-tbl td { padding: 10px 12px 10px 0; border-top: 1px solid var(--line); vertical-align: top; }
+    .dns-tbl tr:first-child td { border-top: none; }
+    .dns-tbl .dns-type { width: 70px; font-weight: 800; color: var(--accent2); font-size: 12px;
+      letter-spacing: .05em; }
+    .dns-val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+      word-break: break-all; padding: 2px 0; }
     .who-name { font-size: 13.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
     .who-role { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
       padding: 2px 8px; border-radius: 999px; background: rgba(13,111,248,.12); color: var(--accent);
@@ -484,10 +521,15 @@ mail.contoso.org"></textarea>
 
     <!-- API -->
     <section id="api-pane" class="hidden">
-      <div class="api-head">
-        <div>
-          <h3 style="margin:0 0 4px">API Reference</h3>
-          <p class="hint2" style="margin:0">Every check is a simple HTTP request. An API key is optional. Pick your language, copy, done.</p>
+      <div class="api-hero">
+        <div class="api-hero-txt">
+          <h3>Build on the checker</h3>
+          <p>Every check is one plain HTTP request. Create a key, give it only the scopes the job needs, and call from any language below.</p>
+          <div class="api-hero-chips">
+            <span class="hero-chip"><b id="hero-endpoints">7</b> endpoints</span>
+            <span class="hero-chip"><b>8</b> languages</span>
+            <span class="hero-chip">scoped keys</span>
+          </div>
         </div>
         <label class="api-base">Base URL
           <input type="text" id="api-base" value="http://localhost:3000" spellcheck="false" />
@@ -496,17 +538,12 @@ mail.contoso.org"></textarea>
       <div class="card key-card">
         <div class="key-row">
           <div style="flex:1">
-            <div class="auth-l">Your API key</div>
-            <div class="mini" id="key-status">Optional. The API works without a key. Generate one for a higher rate limit, or if the server requires keys (DBC_REQUIRE_KEY).</div>
+            <div class="auth-l">API keys</div>
+            <div class="mini">A key is shown exactly once, when it is created. After that only its name and prefix remain; the key itself is stored as a hash and cannot be recovered.</div>
           </div>
           <button id="gen-key" type="button">Create API key</button>
         </div>
-        <div id="key-box" class="key-box hidden">
-          <input type="text" id="key-val" readonly spellcheck="false" />
-          <button class="ghost" id="key-copy" type="button">Copy</button>
-          <button class="ghost" id="key-clear" type="button">Clear</button>
-        </div>
-        <div id="key-scopes-note" class="mini hidden" style="margin-top:8px"></div>
+        <div id="key-list" class="key-list"><div class="mini" style="padding:8px 0">Loading keys…</div></div>
       </div>
       <div class="lang-bar" id="lang-bar"></div>
       <div id="api-endpoints"></div>
@@ -699,7 +736,10 @@ mail.contoso.org"></textarea>
         for (const [tab, id] of Object.entries(PANES)) {
           document.getElementById(id).classList.toggle('hidden', tab !== active);
         }
-        if (active === 'api' && !apiRendered) { renderApi(); apiRendered = true; }
+        if (active === 'api') {
+          if (!apiRendered) { renderApi(); apiRendered = true; }
+          loadKeyList();
+        }
       };
       t.addEventListener('click', activate);
       t.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activate(); } });
@@ -818,8 +858,8 @@ mail.contoso.org"></textarea>
 
     let apiLang = 'cURL';
     let apiSnips = [];
-    let apiKey = '';
-    try { apiKey = localStorage.getItem('dbc_api_key') || ''; } catch { apiKey = ''; }
+    // The plaintext key is never kept client-side: it exists only inside the
+    // created-key modal, once. Code samples carry a YOUR_API_KEY placeholder.
 
     // Default base URL to wherever the page is served from.
     (function () {
@@ -827,26 +867,49 @@ mail.contoso.org"></textarea>
       if (el && /^https?:/.test(location.origin)) el.value = location.origin;
     })();
 
-    function showKey() {
-      const box = document.getElementById('key-box');
-      const st = document.getElementById('key-status');
-      const note = document.getElementById('key-scopes-note');
-      if (apiKey) {
-        document.getElementById('key-val').value = apiKey;
-        box.classList.remove('hidden');
-        st.innerHTML = 'This key is now included in the code samples below (as the <code>X-API-Key</code> header). Stored in your browser only.';
-        let sc = '';
-        try { sc = localStorage.getItem('dbc_api_scopes') || ''; } catch {}
-        if (sc) {
-          note.innerHTML = 'Scopes: ' + sc.split(' ').filter(Boolean)
-            .map((s) => '<span class="scope-chip' + (s === 'all:all' ? ' is-all' : '') + '">' + esc(s) + '</span>').join(' ')
-            + (sc === 'all:all' ? '' : '. Calling anything outside these returns 403.');
-          note.classList.remove('hidden');
-        } else { note.classList.add('hidden'); }
-      } else {
-        box.classList.add('hidden');
-        note.classList.add('hidden');
-        st.innerHTML = 'Optional. The API works without a key. Create one for a higher rate limit, or if the server requires keys (DBC_REQUIRE_KEY). Each key carries scopes that bound what it can reach.';
+    // ---------------- Key list (admin) ----------------
+    // Names, prefixes and scopes only. The key itself was shown once at
+    // creation and exists nowhere the page can reach.
+    async function loadKeyList() {
+      const box = document.getElementById('key-list');
+      if (!box) return;
+      try {
+        const res = await fetch('/api/keys');
+        const j = await res.json();
+        if (!j.ok) { box.innerHTML = '<div class="mini" style="padding:8px 0">' + esc(j.error || 'Could not load keys.') + '</div>'; return; }
+        const keys = (j.keys || []).filter((k) => !k.revokedAt);
+        if (!keys.length) { box.innerHTML = '<div class="mini" style="padding:8px 0">No keys yet. Create one to call the API from scripts.</div>'; return; }
+        box.innerHTML = keys.map((k) => '<div class="key-item" data-id="' + esc(String(k.id)) + '">'
+          + '<div class="key-item-main">'
+          + '<div class="key-item-name">' + esc(k.name) + '</div>'
+          + '<code class="key-item-mask">' + esc(k.prefix || 'dbc_') + '&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</code>'
+          + '<div class="key-item-scopes">' + (k.scopes || []).map((sc) =>
+              '<span class="scope-chip' + (sc === 'all:all' ? ' is-all' : '') + '">' + esc(sc) + '</span>').join(' ') + '</div>'
+          + '</div>'
+          + '<div class="key-item-meta mini">' + (k.createdAt ? 'created ' + esc(String(k.createdAt).slice(0, 10)) : '')
+          + (k.lastUsedAt ? ' &middot; last used ' + esc(String(k.lastUsedAt).slice(0, 10)) : '') + '</div>'
+          + '<button class="ghost key-del" type="button">Delete</button>'
+          + '</div>').join('');
+        box.querySelectorAll('.key-del').forEach((btn) => btn.addEventListener('click', async () => {
+          // Two-step: the first click arms, the second actually revokes.
+          if (btn.dataset.armed !== '1') {
+            btn.dataset.armed = '1';
+            btn.textContent = 'Sure? Delete';
+            btn.classList.add('danger');
+            setTimeout(() => { btn.dataset.armed = ''; btn.textContent = 'Delete'; btn.classList.remove('danger'); }, 3000);
+            return;
+          }
+          btn.disabled = true;
+          const id = btn.closest('.key-item').dataset.id;
+          try {
+            const res = await fetch('/api/keys/' + encodeURIComponent(id), { method: 'DELETE' });
+            const j = await res.json();
+            if (!j.ok) throw new Error(j.error || 'delete failed');
+            loadKeyList();
+          } catch (e) { btn.disabled = false; btn.textContent = 'Failed'; }
+        }));
+      } catch (e) {
+        box.innerHTML = '<div class="mini" style="padding:8px 0">Could not load keys: ' + esc(e.message) + '</div>';
       }
     }
     // ---------------- Create API key ----------------
@@ -863,7 +926,9 @@ mail.contoso.org"></textarea>
     // the typed name lives here rather than only in the input it would destroy.
     let keyName = '';
 
-    const closeKeyModal = () => keyModal.classList.add('hidden');
+    // Closing also wipes the modal body: the one-time plaintext key lives in a
+    // value attribute there, and it must not stay in the DOM after the modal.
+    const closeKeyModal = () => { keyModal.classList.add('hidden'); keyModalBody.innerHTML = ''; };
     document.getElementById('key-modal-close').addEventListener('click', closeKeyModal);
     keyModal.addEventListener('click', (ev) => { if (ev.target === keyModal) closeKeyModal(); });
     document.addEventListener('keydown', (ev) => {
@@ -977,12 +1042,8 @@ mail.contoso.org"></textarea>
         });
         const data = await res.json();
         if (!data.ok) { renderKeyForm(data.error || 'Could not create the key.'); return; }
-        apiKey = data.apiKey;
-        try { localStorage.setItem('dbc_api_key', apiKey); } catch {}
-        try { localStorage.setItem('dbc_api_scopes', picked.join(' ')); } catch {}
         showCreated(data);
-        showKey();
-        if (!document.getElementById('api-pane').classList.contains('hidden')) renderApi();
+        loadKeyList();
       } catch (e) {
         renderKeyForm('Request failed: ' + e.message);
       } finally { btn.disabled = false; btn.textContent = 'Create'; }
@@ -1012,16 +1073,7 @@ mail.contoso.org"></textarea>
       });
       document.getElementById('new-key-done').addEventListener('click', closeKeyModal);
     }
-    document.getElementById('key-copy').addEventListener('click', async (e) => {
-      try { await navigator.clipboard.writeText(apiKey); e.currentTarget.textContent = 'Copied!'; }
-      catch { e.currentTarget.textContent = 'Copy failed'; }
-      setTimeout(() => { e.currentTarget.textContent = 'Copy'; }, 1200);
-    });
-    document.getElementById('key-clear').addEventListener('click', () => {
-      apiKey = ''; try { localStorage.removeItem('dbc_api_key'); localStorage.removeItem('dbc_api_scopes'); } catch {} showKey();
-      if (!document.getElementById('api-pane').classList.contains('hidden')) renderApi();
-    });
-    showKey();
+
 
     function renderApi() {
       const base = (document.getElementById('api-base').value || 'http://localhost:3000').replace(/\/+$/, '');
@@ -1030,11 +1082,15 @@ mail.contoso.org"></textarea>
       apiSnips = [];
       const gen = GEN[apiLang];
       let h = '';
+      const heroN = document.getElementById('hero-endpoints');
+      if (heroN) heroN.textContent = API_ENDPOINTS.length;
       API_ENDPOINTS.forEach((ep, i) => {
-        const code = gen(ep, base, apiKey);
+        // Samples always show how the key travels; the placeholder is replaced
+        // with a real key by whoever pastes the snippet.
+        const code = gen(ep, base, 'YOUR_API_KEY');
         apiSnips.push(code);
         const path = ep.path + (ep.q ? '?' + ep.q : '');
-        h += '<div class="card ep">';
+        h += '<div class="card ep ep-' + ep.method.toLowerCase() + '">';
         h += '<div class="ep-head"><span class="m m-' + ep.method + '">' + ep.method + '</span><code class="ep-path">' + esc(path) + '</code>'
           + (ep.scope ? '<span class="scope-chip" title="A key must carry this scope, or all:all">' + esc(ep.scope) + '</span>' : '')
           + '</div>';
@@ -1225,7 +1281,7 @@ mail.contoso.org"></textarea>
       document.getElementById('auth-out').innerHTML = d.auth
         ? '<div class="card"><div class="meta" style="margin:0 0 4px">Authentication health for <b>' + esc(d.domain)
           + '</b>. Auth score <b>' + fmtScore(d.auth.score) + '</b></div>' + renderAuth(d.auth)
-          + renderAuthRecs(d.recommendations) + '</div>'
+          + renderAuthRecs(d.recommendations) + '</div>' + renderAllDns(d)
         : '<div class="card empty">No authentication data for this input.</div>';
 
       // --- recommendations ---
@@ -1276,6 +1332,50 @@ mail.contoso.org"></textarea>
 
       sOut.innerHTML = h;
       wireAnalyze();
+    }
+
+    // Every DNS record we resolved for the domain, in one table: the Email auth
+    // page doubles as the domain's record sheet.
+    function renderAllDns(d) {
+      // values: array = looked up (may be empty = none published),
+      // null = the lookup itself failed. A timeout is never shown as "None".
+      const rows = [];
+      const add = (type, values, note) => rows.push({ type, values, note });
+      add('A', d.dns.a || []);
+      add('AAAA', d.dns.aaaa || []);
+      const mxr = (d.auth && d.auth.mx && d.auth.mx.records) || [];
+      add('MX', mxr.length ? mxr.map((m) => m.priority + '  ' + m.exchange) : (d.dns.mx || []));
+      add('NS', d.dnsRecords ? d.dnsRecords.ns : []);
+      let txt = d.dnsRecords ? d.dnsRecords.txt : [];
+      let txtNote = '';
+      if (txt === null && d.auth && d.auth.spf && d.auth.spf.record) {
+        // Full TXT set could not be read (big sets need TCP, which some networks
+        // block) but the SPF check already fetched its record; show that much.
+        txt = [d.auth.spf.record];
+        txtNote = 'Full TXT lookup timed out; showing the SPF record found by the auth check. Other TXT records may exist.';
+      }
+      add('TXT', txt, txtNote);
+      const ptrs = (d.auth && d.auth.ptr && d.auth.ptr.records) || [];
+      if (ptrs.length) add('PTR', ptrs.map((r) => r.ip + '  ' + (r.host || 'no reverse DNS') + (r.forwardConfirmed ? '  (forward confirmed)' : '')));
+
+      let h = '<h3>All DNS records <span class="mini">for ' + esc(d.domain) + '</span></h3><div class="card">';
+      h += '<div class="table-scroll"><table class="dns-tbl"><tbody>';
+      for (const r of rows) {
+        h += '<tr><td class="dns-type">' + esc(r.type) + '</td><td>';
+        if (r.values === null) {
+          h += '<span class="mini">Lookup failed, could not be checked (not the same as no records)</span>';
+        } else if (r.values.length) {
+          h += r.values.map((v) => '<div class="dns-val">' + esc(v) + '</div>').join('');
+          if (r.note) h += '<div class="mini" style="margin-top:4px">' + esc(r.note) + '</div>';
+        } else {
+          h += '<span class="mini">None published</span>';
+        }
+        h += '</td></tr>';
+      }
+      h += '</tbody></table></div>';
+      h += '<div class="mini" style="margin-top:10px">Looked up live when this domain was analyzed. TXT includes SPF, verification and any other published strings.</div>';
+      h += '</div>';
+      return h;
     }
 
     function renderAuth(a) {
