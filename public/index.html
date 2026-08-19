@@ -276,7 +276,16 @@
     .tile.t-bad { border-color: rgba(186,26,26,.35); box-shadow: 0 0 0 2px rgba(186,26,26,.18); }
     .tile .t-lbl { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
     .rep-stack { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
+    .rep-stack.hidden { display: none; }
     .rep-stack .card { margin-top: 0; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 16px 20px; }
+    .rep-head { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      margin-top: 24px; cursor: pointer; user-select: none; }
+    .rep-head h3 { margin: 0; }
+    .rep-head:hover h3, .rep-head:hover .rep-caret { color: var(--fg); }
+    .rep-caret { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line2);
+      display: grid; place-items: center; color: var(--muted); font-size: 13px; flex: none;
+      background: var(--card); transition: border-color .15s, color .15s; }
+    .rep-head:hover .rep-caret { border-color: var(--accent); color: var(--accent); }
     /* Analyze tab: compact summary chips + collapsed detail table */
     .sumchips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 2px; }
     .sumchips .chip b { font-weight: 800; }
@@ -1688,16 +1697,21 @@ example.com"></textarea>
       }
 
       // --- receiver-side reputation systems (manual lookups) ---
+      // Collapsed by default: the header row carries an arrow that expands the
+      // list, and any click outside the section folds it away again.
       if (d.reputation && d.reputation.length) {
-        h += '<h3>Inbox providers checked by hand, not part of the score yet</h3>';
-        h += '<div class="rep-stack">';
+        h += '<div id="rep-sec">';
+        h += '<div class="rep-head" id="rep-toggle" role="button" tabindex="0" aria-expanded="false">'
+          + '<h3>Inbox providers checked by hand, not part of the score yet</h3>'
+          + '<span class="rep-caret" aria-hidden="true">▾</span></div>';
+        h += '<div id="rep-body" class="rep-stack hidden">';
         for (const rsys of d.reputation) {
           h += '<div class="card"><div style="flex:1;min-width:240px"><div class="rep-name">' + esc(rsys.name) + '</div>'
             + '<div class="rep-gates">' + esc(rsys.gates) + '. ' + esc(rsys.means) + '</div></div>'
             + '<span class="rep-tag">manual</span>'
             + '<a class="rep-open" href="' + esc(rsys.url) + '" target="_blank" rel="noopener">Open lookup</a></div>';
         }
-        h += '</div>';
+        h += '</div></div>';
       }
 
       // --- blacklist section, folded so the tab reads short by default ---
@@ -1928,7 +1942,31 @@ example.com"></textarea>
         const x = document.getElementById('dnsx');
         if (x && !x.classList.contains('hidden')) pk.classList.add('sel');
       });
+      // Inbox providers: the arrow (or the header) expands the folded list.
+      const rt = document.getElementById('rep-toggle');
+      if (rt) {
+        const flip = () => setRepOpen(document.getElementById('rep-body').classList.contains('hidden'));
+        rt.addEventListener('click', flip);
+        rt.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); flip(); } });
+      }
     }
+
+    function setRepOpen(open) {
+      const body = document.getElementById('rep-body');
+      const head = document.getElementById('rep-toggle');
+      if (!body || !head) return;
+      body.classList.toggle('hidden', !open);
+      head.setAttribute('aria-expanded', String(open));
+      const c = head.querySelector('.rep-caret');
+      if (c) c.textContent = open ? '▴' : '▾';
+    }
+    // Any click outside the section folds the provider list away.
+    document.addEventListener('click', (ev) => {
+      const body = document.getElementById('rep-body');
+      if (!body || body.classList.contains('hidden')) return;
+      const sec = document.getElementById('rep-sec');
+      if (sec && !sec.contains(ev.target)) setRepOpen(false);
+    });
 
     function hideDnsx() {
       const x = document.getElementById('dnsx');
