@@ -76,3 +76,30 @@ test('does not set dnsError for a genuinely record-less (NXDOMAIN) domain', asyn
   const r = await checkDomain('example.com', { resolver: nx, calibration: false, overallTimeoutMs: 2000 });
   assert.equal(r.dnsError, false, 'clean NXDOMAIN is not a resolver failure');
 });
+
+test('a SURBL multi hit decodes its bitmask into the listed reason', async () => {
+  // Answer 127.0.0.72 (8 phishing + 64 abuse) for the SURBL query only;
+  // everything else is clean.
+  const resolver = {
+    resolve4: (name, opts) => {
+      if (name === 'example.com') {
+        return Promise.resolve(opts && opts.ttl ? [{ address: '1.2.3.4', ttl: 60 }] : ['1.2.3.4']);
+      }
+      if (name.endsWith('.multi.surbl.org')) {
+        return Promise.resolve(opts && opts.ttl ? [{ address: '127.0.0.72', ttl: 60 }] : ['127.0.0.72']);
+      }
+      return Promise.reject(err('ENOTFOUND'));
+    },
+    resolve6: () => Promise.reject(err('ENOTFOUND')),
+    resolveMx: () => Promise.reject(err('ENOTFOUND')),
+    resolveTxt: () => Promise.reject(err('ENOTFOUND')),
+    reverse: () => Promise.reject(err('ENOTFOUND')),
+  };
+  const r = await checkDomain('example.com', {
+    resolver, calibration: false, retries: 0, overallTimeoutMs: 4000,
+  });
+  const row = r.table.find((x) => x.zone === 'multi.surbl.org');
+  assert.equal(row.state, 'listed');
+  assert.match(row.reason, /phishing dataset/);
+  assert.match(row.reason, /ABUSE: spam\/abuse dataset/);
+});

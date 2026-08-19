@@ -175,19 +175,38 @@ function collapseByZone(rows) {
   return [...byZone.values()];
 }
 
+// SURBL multi answers with a bitmask in the last octet: several datasets can
+// fire at once, so the meaning is decoded per bit rather than looked up.
+function surblMeaning(code) {
+  const n = Number(String(code).split('.').pop());
+  if (!Number.isFinite(n)) return '';
+  const parts = [];
+  if (n & 8) parts.push('PH: phishing dataset');
+  if (n & 16) parts.push('MW: malware dataset');
+  if (n & 64) parts.push('ABUSE: spam/abuse dataset (newly registered and misused domains land here)');
+  if (n & 128) parts.push('CR: cracked/compromised website dataset');
+  return parts.join('; ');
+}
+
 /** Normalize a raw zone result into a display row for the results table. */
 function toRow(r) {
   const state = r.skipped
     ? 'skipped'
     : r.listed === true ? 'listed' : r.listed === false ? 'ok' : 'timeout';
   const codeMap = RETURN_CODES[r.zone];
-  const meanings = codeMap && r.codes ? r.codes.map((c) => codeMap[c]).filter(Boolean) : [];
+  let meanings = codeMap && r.codes ? r.codes.map((c) => codeMap[c]).filter(Boolean) : [];
+  if (r.zone === 'multi.surbl.org' && r.codes && r.codes.length) {
+    meanings = r.codes.map(surblMeaning).filter(Boolean);
+  }
   const subjects = r.subjects && r.subjects.length ? r.subjects : [r.subject];
   let reason = '';
   if (state === 'listed') {
     reason = subjects.length > 1
       ? `${subjects.join(', ')} were listed`
       : `${subjects[0]} was listed`;
+    // Say WHY when the zone's return code tells us. "was listed" alone sends
+    // the reader off to decode 127.0.0.x by hand.
+    if (meanings.length) reason += ` (${meanings.join('; ')})`;
   } else if (state === 'timeout') reason = timeoutReason(r);
   else if (state === 'skipped') reason = r.skipReason || 'not queried';
   return {
