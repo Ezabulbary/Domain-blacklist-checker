@@ -5,6 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Deliverly.ai</title>
   <link rel="icon" type="image/svg+xml" href="/brand-icon.svg">
+  <script>
+    // Operator-supplied brand art in public/ is preferred. Every candidate is
+    // tried in order and the bundled SVG recreation is the last resort. The
+    // list carries both spellings of the uploaded filenames on purpose, so a
+    // rename or the original typo both keep working.
+    var BRAND_ICON_SRCS = [
+      '/Deloverly%20Icon%20-%20Colored.svg',
+      '/Deliverly%20Icon%20-%20Colored.svg',
+      '/brand-icon.png',
+      '/brand-icon.svg',
+    ];
+    function brandIconFallback(img) {
+      var i = (Number(img.dataset.bi) || 0) + 1;
+      if (i < BRAND_ICON_SRCS.length) { img.dataset.bi = i; img.src = BRAND_ICON_SRCS[i]; }
+    }
+    // Favicon: same preference order, settled by probing.
+    (function pick(i) {
+      if (i >= BRAND_ICON_SRCS.length - 1) return; // the SVG link below is already the default
+      var probe = new Image();
+      probe.onload = function () {
+        var l = document.querySelector('link[rel="icon"]');
+        if (l) { l.removeAttribute('type'); l.href = BRAND_ICON_SRCS[i]; }
+      };
+      probe.onerror = function () { pick(i + 1); };
+      probe.src = BRAND_ICON_SRCS[i];
+    })(0);
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -37,6 +64,15 @@
     .side-brand { display: flex; gap: 11px; align-items: center; padding: 2px 8px 20px; }
     .logo-mark { width: 38px; height: auto; flex: none; display: block; }
     .brand-ai { color: var(--accent); }
+    .logo-full { height: 34px; width: auto; max-width: 190px; object-fit: contain; display: block; }
+    .logo-full.hidden { display: none; }
+    .brand-compact { display: flex; gap: 11px; align-items: center; }
+    .brand-compact.hidden { display: none; }
+    .login-logo-full { height: 40px; width: auto; max-width: 260px; object-fit: contain; }
+    .login-logo-full.hidden { display: none; }
+    .login-compact { display: inline-flex; gap: 10px; align-items: center; }
+    .login-compact.hidden { display: none; }
+    @media (max-width: 880px) { .logo-full { height: 26px; } }
     .brand-txt { display: flex; flex-direction: column; line-height: 1.15; }
     .brand-t { font-weight: 800; font-size: 17px; letter-spacing: -.02em; }
     .login-h { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; }
@@ -563,8 +599,16 @@
   <div class="app">
     <aside class="sidebar" id="sidebar">
       <div class="side-brand">
-        <img class="logo-mark" src="/brand-icon.svg" alt="deliverly.ai">
-        <div class="brand-txt"><span class="brand-t">deliverly<span class="brand-ai">.ai</span></span><span class="brand-s">Domain health checker</span></div>
+        <!-- The full wordmark logo when the operator dropped it into public/;
+             otherwise the compact icon + text pair below stays visible. -->
+        <img class="logo-full hidden" alt="deliverly.ai"
+          src="/Deloverly%20Logo%20-%20Colroed.svg"
+          onerror="if (this.src.indexOf('Colroed') !== -1) { this.src = '/Deliverly%20Logo%20-%20Colored.svg'; } else { this.remove(); }"
+          onload="this.classList.remove('hidden'); var c = document.getElementById('brand-compact'); if (c) c.classList.add('hidden');">
+        <span id="brand-compact" class="brand-compact">
+          <img class="logo-mark" src="/Deloverly%20Icon%20-%20Colored.svg" onerror="brandIconFallback(this)" alt="deliverly.ai">
+          <div class="brand-txt"><span class="brand-t">deliverly<span class="brand-ai">.ai</span></span><span class="brand-s">Domain health checker</span></div>
+        </span>
       </div>
       <nav class="side-nav" aria-label="Main menu">
         <div class="side-label">Menu</div>
@@ -695,7 +739,13 @@ example.com"></textarea>
 
     <div id="login-overlay" class="login-overlay hidden">
       <form class="login-card" id="login-form">
-        <h2 class="login-h"><img src="/brand-icon.svg" alt="" class="login-logo"><span>deliverly<span class="brand-ai">.ai</span></span></h2>
+        <h2 class="login-h">
+          <img class="login-logo-full hidden" alt="deliverly.ai"
+            src="/Deloverly%20Logo%20-%20Colroed.svg"
+            onerror="if (this.src.indexOf('Colroed') !== -1) { this.src = '/Deliverly%20Logo%20-%20Colored.svg'; } else { this.remove(); }"
+            onload="this.classList.remove('hidden'); var c = document.getElementById('login-compact'); if (c) c.classList.add('hidden');">
+          <span id="login-compact" class="login-compact"><img src="/Deloverly%20Icon%20-%20Colored.svg" onerror="brandIconFallback(this)" alt="" class="login-logo"><span>deliverly<span class="brand-ai">.ai</span></span></span>
+        </h2>
         <div class="login-sub">Sign in to open the dashboard.</div>
         <label class="f-label" for="login-user">Username</label>
         <input class="f-input" id="login-user" autocomplete="username" spellcheck="false" autofocus />
@@ -1543,7 +1593,7 @@ example.com"></textarea>
       // Left: overall health with the big score ring.
       h += '<div class="card ohealth">';
       h += '<div class="panel-head"><span class="panel-label blue">Overall Health</span>'
-        + '<img class="logo-mini" src="/brand-icon.svg" alt=""></div>';
+        + '<img class="logo-mini" src="/Deloverly%20Icon%20-%20Colored.svg" onerror="brandIconFallback(this)" alt=""></div>';
       h += '<div class="ohealth-body">' + bigRing(d.riskScore);
       h += '<span class="standing-pill ' + sCls + '">'
         + '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 7l-8.5 9L6 12.5"/><path d="M22 7l-8.5 9"/></svg>'
