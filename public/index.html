@@ -578,7 +578,7 @@
        search boxes that would only answer 401. */
     body.share-view #single-form, body.share-view #lists-hint,
     body.share-view #bulk-form, body.share-view .bulk-controls,
-    body.share-view .share-row, body.share-view #goto-auth { display: none; }
+    body.share-view .share-row { display: none; }
     /* The share card is a real card; undo the old inline share-row strip look.
        Descriptions wrap on word boundaries; only a pasted URL may break anywhere. */
     .share-card.share-row { border-top: 1px solid var(--line); padding: 20px; }
@@ -623,7 +623,6 @@
         <div class="side-label">Menu</div>
         <div class="tab active" data-tab="single" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><span>Analyze</span></div>
         <div class="tab" data-tab="bulk" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg><span>Bulk list</span></div>
-        <div class="tab" data-tab="auth" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10z"/><path d="M9 11.5l2 2 4-4.5"/></svg><span>Email auth</span></div>
         <div class="tab" data-tab="api" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg><span>API</span></div>
         <div class="tab" data-tab="visitors" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Visitors</span></div>
       </nav>
@@ -677,10 +676,6 @@ example.com"></textarea>
     </section>
 
     <!-- EMAIL AUTH -->
-    <section id="auth-pane" class="hidden">
-      <div id="auth-out"><div class="card empty">Run a check on the Analyze tab first. The SPF, DKIM, DMARC, MX and PTR results for that domain appear here.</div></div>
-    </section>
-
     <!-- API -->
     <section id="api-pane" class="hidden">
       <div class="api-hero">
@@ -897,12 +892,11 @@ example.com"></textarea>
     const scoreColor = (s) => (s >= 85 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)');
 
     // ---- tabs ----
-    const PANES = { single: 'single-pane', bulk: 'bulk-pane', auth: 'auth-pane', api: 'api-pane', visitors: 'visitors-pane' };
+    const PANES = { single: 'single-pane', bulk: 'bulk-pane', api: 'api-pane', visitors: 'visitors-pane' };
     // Each section carries its own heading, so the page always says where you are.
     const PAGE_HEADS = {
       single: ['Deliverability Insights', 'Optimizing your inbox reach with domain health analysis.'],
       bulk: ['Bulk list', 'Check many domains at once. Results stream in as batches finish, and export to CSV.'],
-      auth: ['Email authentication', 'SPF, DKIM, DMARC, MX and reverse DNS for the last analyzed domain.'],
       api: ['API', 'Every check as a plain HTTP request, with scoped keys and code samples.'],
       visitors: ['Visitors', 'Every browser that opened this site: device, network and locale details, and who is here right now.'],
     };
@@ -1534,7 +1528,6 @@ example.com"></textarea>
       { key: 'domain', label: 'Domain / URI' }, { key: 'ip', label: 'IP Reputation' },
       { key: 'spam', label: 'Spam / Phishing' }, { key: 'malware', label: 'Malware' },
     ];
-    const AUTH_ST = { pass: 'st-ok', warn: 'st-timeout', missing: 'st-listed', unknown: 'st-timeout', fail: 'st-listed' };
 
     // A score is null when nothing could be measured. Printing that as a number
     // would read as a result, and "0" would read as the worst possible one.
@@ -1672,10 +1665,7 @@ example.com"></textarea>
           ['DMARC', st(d.auth.dmarc), 'dmarc']];
         const mark = (cls) => cls === 'c-ok' ? '✓ ' : cls === 'c-warn' ? '⚠ ' : cls === 'c-bad' ? '✕ ' : '';
         h += '<div class="card" id="dnsauth-card"><div class="panel-head"><span class="panel-label">DNS Records &amp; Authentication</span>'
-          + '<span class="panel-links">'
-          + '<a href="#" id="goto-auth" class="panel-link">View Full DNS Records</a>'
-          + '<a href="#" id="dns-peek" class="panel-link">All records ▾</a>'
-          + '</span></div>';
+          + '<a href="#" id="dns-peek" class="panel-link">All records ▾</a></div>';
         h += '<div class="tile-grid">' + parts.filter((x) => x[1]).map(([n, v, key]) =>
           '<div class="tile' + v[2] + '" data-rec="' + key + '" role="button" tabindex="0" title="Click to see the ' + esc(n) + ' records">'
           + '<span class="t-lbl">' + esc(n) + '</span>'
@@ -1685,14 +1675,6 @@ example.com"></textarea>
         h += '<div id="dnsx" class="dnsx hidden"></div>';
         h += '</div>';
       }
-
-      // --- auth cards ---
-      // Authentication health lives on its own tab now.
-      document.getElementById('auth-out').innerHTML = d.auth
-        ? '<div class="card"><div class="meta" style="margin:0 0 4px">Authentication health for <b>' + esc(d.domain)
-          + '</b>. Auth score <b>' + fmtScore(d.auth.score) + '</b></div>' + renderAuth(d.auth)
-          + renderAuthRecs(d.recommendations) + '</div>' + renderAllDns(d)
-        : '<div class="card empty">No authentication data for this input.</div>';
 
       // --- recommendations ---
       if (d.recommendations && d.recommendations.some((x) => x.area === 'blacklist')) {
@@ -1744,16 +1726,8 @@ example.com"></textarea>
       wireAnalyze();
     }
 
-    // Every DNS record we resolved for the domain, in one table: the Email auth
-    // page doubles as the domain's record sheet.
-    function renderAllDns(d) {
-      let h = '<h3>All DNS records <span class="mini">for ' + esc(d.domain) + '</span></h3><div class="card">';
-      h += dnsRecordsTable(d);
-      h += '<div class="mini" style="margin-top:10px">Looked up live when this domain was analyzed. TXT includes SPF, verification and any other published strings.</div>';
-      h += '</div>';
-      return h;
-    }
-
+    // Every DNS record we resolved for the domain, in one table; shown by the
+    // All records drawer under the DNS card.
     function dnsRecordsTable(d) {
       // values: array = looked up (may be empty = none published),
       // null = the lookup itself failed. A timeout is never shown as "None".
@@ -1845,43 +1819,6 @@ example.com"></textarea>
       return head('All DNS records') + dnsRecordsTable(d);
     }
 
-    function renderAuth(a) {
-      const card = (label, st, big, sub) => {
-        const cls = AUTH_ST[st] || 'st-timeout';
-        return '<div class="auth ' + cls + '"><div class="auth-l">' + label + '</div>'
-          + '<div class="auth-v">' + esc(big) + '</div><div class="mini">' + esc(sub || '') + '</div></div>';
-      };
-      const spf = a.spf, dkim = a.dkim, dmarc = a.dmarc;
-      // A failed lookup reads as "not checked", never as "MISSING". Saying a
-      // domain has no SPF because the query timed out is a false finding.
-      const unk = (rec) => rec && rec.status === 'unknown';
-      const why = (rec) => 'lookup failed' + (rec.error ? ' (' + rec.error + ')' : '') + ', not a finding';
-      let h = '<h3>Authentication health</h3>';
-      if (a.complete === false) {
-        h += '<div class="meta" style="margin-bottom:10px">Some records could not be looked up, '
-          + 'so the score below is incomplete. Those are shown as "not checked", not as missing.</div>';
-      }
-      h += '<div class="auth-grid">';
-      h += unk(spf)
-        ? card('SPF', 'unknown', 'NOT CHECKED', why(spf))
-        : card('SPF', spf.status, spf.present ? (spf.status === 'pass' ? 'PASS' : 'WARN') : 'MISSING',
-          spf.present ? (spf.policy || '') + (spf.lookups != null ? ' · ' + spf.lookups + ' lookups' : '') : 'no SPF record');
-      h += card('DKIM', dkim.status, dkim.present ? 'PASS' : 'NONE',
-        dkim.present ? dkim.selectors.map((s) => s.selector).join(', ') : 'no common selector found');
-      h += unk(dmarc)
-        ? card('DMARC', 'unknown', 'NOT CHECKED', why(dmarc))
-        : card('DMARC', dmarc.status, dmarc.present ? (dmarc.policy === 'reject' ? 'PASS' : 'WEAK') : 'MISSING',
-          dmarc.present ? 'p=' + dmarc.policy : 'no DMARC record');
-      if (a.mx) h += unk(a.mx)
-        ? card('MX', 'unknown', 'NOT CHECKED', why(a.mx))
-        : card('MX', a.mx.status, a.mx.present ? String(a.mx.records.length) : 'NONE',
-          a.mx.present ? a.mx.records[0].exchange : 'no MX');
-      if (a.ptr) h += card('PTR / rDNS', a.ptr.status, a.ptr.status === 'pass' ? 'VALID' : 'CHECK',
-        (a.ptr.records[0] && a.ptr.records[0].host) || 'no reverse DNS');
-      h += '</div>';
-      return h;
-    }
-
     function renderSignals(signals) {
       if (!signals || !signals.length) return '';
       let h = '<h3>Engagement & reputation signals <span class="mini">(needs ESP/MTA integration)</span></h3><div class="sig-grid">';
@@ -1924,22 +1861,6 @@ example.com"></textarea>
       return h;
     }
 
-    // Only the authentication-related advice belongs on the Email auth tab.
-    function renderAuthRecs(recs) {
-      const list = (recs || []).filter((r) => ['spf', 'dkim', 'dmarc', 'ptr'].includes(r.area));
-      if (!list.length) return '';
-      let h = '<h3>What to fix</h3>';
-      for (const r of list) {
-        h += '<div class="rec ' + ({ critical: 'crit', high: 'high', medium: 'med', low: 'low' }[r.severity] || 'med') + '">'
-          + '<div class="rec-t"><span class="sev-dot ' + r.severity + '"></span>' + esc(r.title)
-          + ' <span class="sev">' + esc(r.severity) + '</span></div>'
-          + '<div class="n">' + esc(r.detail)
-          + (r.action ? ' <a href="' + esc(r.action.url) + '" target="_blank" rel="noopener">' + esc(r.action.label) + '</a>' : '')
-          + '</div></div>';
-      }
-      return h;
-    }
-
     // The removal buttons live inside the table, so every re-render of the
     // table must re-bind them or "Start removal" silently stops working after
     // the first filter click.
@@ -1969,12 +1890,6 @@ example.com"></textarea>
       const sh = document.getElementById('share-single');
       if (sh) sh.addEventListener('click', () =>
         shareSnapshot('single', report, sh, document.getElementById('share-single-note')));
-      const ga = document.getElementById('goto-auth');
-      if (ga) ga.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        const t = document.querySelector('.tab[data-tab="auth"]');
-        if (t) t.click();
-      });
       // "Request delisting" in the listed callout: open the full table and
       // bring it into view; the per-row Start removal buttons live there.
       const gl = document.getElementById('goto-listed');
