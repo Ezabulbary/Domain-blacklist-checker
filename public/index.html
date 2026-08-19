@@ -225,7 +225,16 @@
     .tile-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
     @media (max-width: 880px) { .tile-grid { grid-template-columns: repeat(2, 1fr); } }
     .tile { background: var(--bg2); border: 1px solid rgba(0,76,181,.10); border-radius: 10px; padding: 16px 10px;
-      display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+      display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+      cursor: pointer; user-select: none; transition: background .15s, box-shadow .15s; }
+    .tile:hover { background: var(--tonal); }
+    .tile.sel { box-shadow: 0 0 0 2px var(--accent); background: var(--tonal); }
+    .panel-links { display: inline-flex; gap: 16px; align-items: center; }
+    .panel-link.sel { text-decoration: underline; font-weight: 700; }
+    .dnsx { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+    .dnsx.hidden { display: none; }
+    .dnsx-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); margin-bottom: 8px; }
     .tile.t-warn { border-color: rgba(234,179,8,.35); box-shadow: 0 0 0 2px rgba(234,179,8,.25); }
     .tile.t-bad { border-color: rgba(186,26,26,.35); box-shadow: 0 0 0 2px rgba(186,26,26,.18); }
     .tile .t-lbl { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
@@ -1524,7 +1533,6 @@ example.com"></textarea>
       }
 
       // --- bento grid: Overall Health | Blocklist status + Share ---
-      const ip = (d.resolvesTo || []).join(', ') || 'no IP address';
       const sCls = typeof d.riskScore !== 'number' ? 's-mute'
         : d.riskScore >= 80 ? 's-ok' : d.riskScore >= 50 ? 's-warn' : 's-bad';
       const standingTitle = (d.standing || 'no score')
@@ -1543,7 +1551,6 @@ example.com"></textarea>
       h += '<div class="stat-strip">'
         + '<div><span class="k">Domain</span><span class="v">' + esc(d.domain) + '</span></div>'
         + (d.provider ? '<div><span class="k">Provider</span><span class="v">' + esc(d.provider.name) + '</span></div>' : '')
-        + '<div><span class="k">Resolves to</span><span class="v mono">' + esc(ip) + '</span></div>'
         + '<div><span class="k">Response time</span><span class="v mono">' + d.tookMs + 'ms</span></div>'
         + '</div></div>';
 
@@ -1601,19 +1608,22 @@ example.com"></textarea>
           ? (d.auth.mx.status === 'unknown' ? ['not checked', 'c-mute', '']
             : d.auth.mx.present ? [d.auth.mx.records.length + ' record' + (d.auth.mx.records.length > 1 ? 's' : ''), 'c-ok', ''] : ['none', 'c-warn', ' t-warn'])
           : null;
-        const parts = [['MX Record', mxSt], ['SPF', st(d.auth.spf)],
-          ['DKIM', d.auth.dkim && d.auth.dkim.present ? ['Pass', 'c-ok', ''] : ['none found', 'c-warn', ' t-warn']],
-          ['DMARC', st(d.auth.dmarc)]];
+        const parts = [['MX Record', mxSt, 'mx'], ['SPF', st(d.auth.spf), 'spf'],
+          ['DKIM', d.auth.dkim && d.auth.dkim.present ? ['Pass', 'c-ok', ''] : ['none found', 'c-warn', ' t-warn'], 'dkim'],
+          ['DMARC', st(d.auth.dmarc), 'dmarc']];
         const mark = (cls) => cls === 'c-ok' ? '✓ ' : cls === 'c-warn' ? '⚠ ' : cls === 'c-bad' ? '✕ ' : '';
-        h += '<div class="card"><div class="panel-head"><span class="panel-label">DNS Records &amp; Authentication</span>'
-          + '<a href="#" id="goto-auth" class="panel-link">View Full DNS Records</a></div>';
-        h += '<div class="tile-grid">' + parts.filter((x) => x[1]).map(([n, v]) =>
-          '<div class="tile' + v[2] + '"><span class="t-lbl">' + esc(n) + '</span>'
+        h += '<div class="card" id="dnsauth-card"><div class="panel-head"><span class="panel-label">DNS Records &amp; Authentication</span>'
+          + '<span class="panel-links">'
+          + '<a href="#" id="goto-auth" class="panel-link">View Full DNS Records</a>'
+          + '<a href="#" id="dns-peek" class="panel-link">All records ▾</a>'
+          + '</span></div>';
+        h += '<div class="tile-grid">' + parts.filter((x) => x[1]).map(([n, v, key]) =>
+          '<div class="tile' + v[2] + '" data-rec="' + key + '" role="button" tabindex="0" title="Click to see the ' + esc(n) + ' records">'
+          + '<span class="t-lbl">' + esc(n) + '</span>'
           + '<span class="chip ' + v[1] + '">' + mark(v[1]) + esc(v[0]) + '</span></div>').join('') + '</div>';
-        h += '<div class="dns" style="margin-top:16px;font-family:var(--mono);font-size:12.5px">'
-          + '<div><b>A</b> ' + (esc(d.dns.a.join(', ')) || 'None') + '</div>'
-          + (d.dns.aaaa.length ? '<div><b>AAAA</b> ' + esc(d.dns.aaaa.join(', ')) + '</div>' : '')
-          + '<div><b>MX</b> ' + (esc(d.dns.mx.join(', ')) || 'None') + '</div></div>';
+        // Detail drawer: a tile's records, or the whole record set, appear
+        // here on click and hide again on any click outside the card.
+        h += '<div id="dnsx" class="dnsx hidden"></div>';
         h += '</div>';
       }
 
@@ -1678,6 +1688,14 @@ example.com"></textarea>
     // Every DNS record we resolved for the domain, in one table: the Email auth
     // page doubles as the domain's record sheet.
     function renderAllDns(d) {
+      let h = '<h3>All DNS records <span class="mini">for ' + esc(d.domain) + '</span></h3><div class="card">';
+      h += dnsRecordsTable(d);
+      h += '<div class="mini" style="margin-top:10px">Looked up live when this domain was analyzed. TXT includes SPF, verification and any other published strings.</div>';
+      h += '</div>';
+      return h;
+    }
+
+    function dnsRecordsTable(d) {
       // values: array = looked up (may be empty = none published),
       // null = the lookup itself failed. A timeout is never shown as "None".
       const rows = [];
@@ -1709,8 +1727,7 @@ example.com"></textarea>
       const ptrs = (d.auth && d.auth.ptr && d.auth.ptr.records) || [];
       if (ptrs.length) add('PTR', ptrs.map((r) => r.ip + '  ' + (r.host || 'no reverse DNS') + (r.forwardConfirmed ? '  (forward confirmed)' : '')));
 
-      let h = '<h3>All DNS records <span class="mini">for ' + esc(d.domain) + '</span></h3><div class="card">';
-      h += '<div class="table-scroll"><table class="dns-tbl"><tbody>';
+      let h = '<div class="table-scroll"><table class="dns-tbl"><tbody>';
       for (const r of rows) {
         h += '<tr><td class="dns-type">' + esc(r.type) + '</td><td>';
         if (r.values === null) {
@@ -1724,9 +1741,49 @@ example.com"></textarea>
         h += '</td></tr>';
       }
       h += '</tbody></table></div>';
-      h += '<div class="mini" style="margin-top:10px">Looked up live when this domain was analyzed. TXT includes SPF, verification and any other published strings.</div>';
-      h += '</div>';
       return h;
+    }
+
+    // One tile's records, for the drawer under the DNS card. Same honesty
+    // rules as everywhere: a failed lookup is "could not be checked", never
+    // "missing" or "none".
+    function recDetail(kind, d) {
+      const head = (t) => '<div class="dnsx-head">' + t + '</div>';
+      const mono = (v) => '<div class="dns-val">' + esc(v) + '</div>';
+      const failed = '<div class="mini">Lookup failed, could not be checked (not the same as no records).</div>';
+      if (kind === 'mx') {
+        const mx = d.auth && d.auth.mx;
+        if (mx && mx.status === 'unknown') return head('MX records') + failed;
+        const recs = (mx && mx.records) || [];
+        return head('MX records')
+          + (recs.length ? recs.map((m) => mono(m.priority + '  ' + m.exchange)).join('')
+            : (d.dns.mx && d.dns.mx.length ? d.dns.mx.map(mono).join('') : '<div class="mini">None published. This domain does not receive mail.</div>'));
+      }
+      if (kind === 'spf') {
+        const s = d.auth && d.auth.spf;
+        if (!s) return head('SPF') + '<div class="mini">Not checked for this input.</div>';
+        if (s.status === 'unknown' && !s.present) return head('SPF') + failed;
+        if (!s.present) return head('SPF') + '<div class="mini">No SPF record published.</div>';
+        return head('SPF record') + mono(s.record || '')
+          + '<div class="mini" style="margin-top:6px">Policy: ' + esc(s.policy || '')
+          + (typeof s.lookups === 'number' ? ' &middot; ' + s.lookups + ' DNS lookups (max 10)' : '') + '</div>';
+      }
+      if (kind === 'dkim') {
+        const k = d.auth && d.auth.dkim;
+        const sels = (k && k.selectors) || [];
+        return head('DKIM selectors')
+          + (sels.length ? sels.map((x) => mono(x.selector + '._domainkey.' + d.domain + '  (' + (x.keyType || 'rsa') + ')')).join('')
+            : '<div class="mini">' + esc((k && k.note) || 'No key found for common selectors.') + '</div>');
+      }
+      if (kind === 'dmarc') {
+        const m = d.auth && d.auth.dmarc;
+        if (!m) return head('DMARC') + '<div class="mini">Not checked for this input.</div>';
+        if (m.status === 'unknown' && !m.present) return head('DMARC') + failed;
+        if (!m.present) return head('DMARC') + '<div class="mini">No DMARC record published at _dmarc.' + esc(d.domain) + '.</div>';
+        return head('DMARC record') + mono(m.record || '')
+          + '<div class="mini" style="margin-top:6px">Policy: ' + esc(m.policy || '') + '</div>';
+      }
+      return head('All DNS records') + dnsRecordsTable(d);
     }
 
     function renderAuth(a) {
@@ -1867,7 +1924,55 @@ example.com"></textarea>
         const det = document.querySelector('.bl-details');
         if (det) { det.open = true; det.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
       });
+      // DNS drawer: a tile shows its own records under the card, the
+      // "All records" link shows everything; a second click (or any click
+      // outside the card, handled globally) closes it.
+      const showDnsx = (html, marker) => {
+        const x = document.getElementById('dnsx');
+        if (!x) return;
+        document.querySelectorAll('#dnsauth-card .tile.sel').forEach((t) => t.classList.remove('sel'));
+        const pk = document.getElementById('dns-peek');
+        if (pk) pk.classList.remove('sel');
+        if (x.dataset.open === marker) { hideDnsx(); return; }
+        x.innerHTML = html;
+        x.dataset.open = marker;
+        x.classList.remove('hidden');
+      };
+      document.querySelectorAll('#dnsauth-card .tile').forEach((tile) => {
+        const open = () => {
+          showDnsx(recDetail(tile.dataset.rec, report), tile.dataset.rec);
+          const x = document.getElementById('dnsx');
+          if (x && !x.classList.contains('hidden')) tile.classList.add('sel');
+        };
+        tile.addEventListener('click', open);
+        tile.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } });
+      });
+      const pk = document.getElementById('dns-peek');
+      if (pk) pk.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        showDnsx(recDetail('all', report), 'all');
+        const x = document.getElementById('dnsx');
+        if (x && !x.classList.contains('hidden')) pk.classList.add('sel');
+      });
     }
+
+    function hideDnsx() {
+      const x = document.getElementById('dnsx');
+      if (!x) return;
+      x.classList.add('hidden');
+      x.innerHTML = '';
+      delete x.dataset.open;
+      document.querySelectorAll('#dnsauth-card .tile.sel').forEach((t) => t.classList.remove('sel'));
+      const pk = document.getElementById('dns-peek');
+      if (pk) pk.classList.remove('sel');
+    }
+    // Any click outside the DNS card closes the drawer.
+    document.addEventListener('click', (ev) => {
+      const x = document.getElementById('dnsx');
+      if (!x || x.classList.contains('hidden')) return;
+      const card = document.getElementById('dnsauth-card');
+      if (card && !card.contains(ev.target)) hideDnsx();
+    });
 
     // ================= REMOVAL GUIDE =================
     const modal = document.getElementById('removal-modal');
