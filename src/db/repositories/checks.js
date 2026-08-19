@@ -30,7 +30,9 @@ export async function saveCheck(result, { userId = null } = {}) {
         `INSERT INTO checks (domain_id, user_id, score, verdict, listed_count, raw_result)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING ${COLS}`,
-        [dom.id, userId, result.score, result.verdict, result.counts?.listed ?? 0, result],
+        // Both result shapes land here: checkDomain() carries listedCount,
+        // the bulk audit shape carries counts.listed.
+        [dom.id, userId, result.score, result.verdict, result.listedCount ?? result.counts?.listed ?? 0, result],
       )
     ).rows[0];
 

@@ -118,6 +118,33 @@ export function onlineWindowSeconds() {
   return Math.round(ONLINE_WINDOW_MS / 1000);
 }
 
+/**
+ * Restore records saved in the database, called once at boot. Restored
+ * visitors come back as they were, and read as offline until their browser
+ * beats again (its lastSeen is in the past, which is the truth). A record
+ * already in memory wins over its stored copy.
+ */
+export function hydrate(records = []) {
+  let loaded = 0;
+  for (const r of records) {
+    if (!r || !isVisitorId(r.id) || visitors.has(r.id)) continue;
+    if (visitors.size >= MAX_VISITORS) break;
+    visitors.set(r.id, {
+      ...r,
+      firstSeen: Number(r.firstSeen) || Date.now(),
+      lastSeen: Number(r.lastSeen) || 0,
+      hits: Number(r.hits) || 0,
+    });
+    loaded += 1;
+  }
+  return loaded;
+}
+
+/** The live record for one visitor id, or null. */
+export function getVisitor(vid) {
+  return visitors.get(vid) || null;
+}
+
 /** Test helper. */
 export function clearVisitors() {
   visitors.clear();

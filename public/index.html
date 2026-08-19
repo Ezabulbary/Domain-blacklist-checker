@@ -814,8 +814,8 @@ example.com"></textarea>
         resp: '{\n  "ok": true,\n  "domain": "example.com",\n  "count": 3,\n  "checks": [ { "score": 95, "verdict": "listed", "created_at": "…" }, … ]\n}' },
       { method: 'GET', path: '/api/health', scope: null,
         title: 'Health check',
-        desc: 'Liveness, zone count and whether a database is connected.',
-        resp: '{ "status": "ok", "zones": 69, "db": false }' },
+        desc: 'Liveness, zone count and database state: "off" (not configured), "ok", or "error" with the reason, so a connected-but-not-saving database is visible.',
+        resp: '{ "status": "ok", "zones": 69, "db": "ok" }' },
     ];
 
     const fullUrl = (base, ep) => base + ep.path + (ep.q ? '?' + ep.q : '');

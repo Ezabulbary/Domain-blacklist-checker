@@ -131,3 +131,37 @@ test('cascade: deleting a user removes monitors and alerts', { skip }, async () 
   assert.equal(await db.monitors.getMonitorById(m.id), null);
   assert.deepEqual(await db.alerts.listAlertsForMonitor(m.id), []);
 });
+
+test('checks: the single-check shape (listedCount, no counts) stores its listed count', { skip }, async () => {
+  // Regression: checkDomain() carries listedCount while the bulk audit shape
+  // carries counts.listed. The saver must read both; it used to read only the
+  // latter, so every single check was stored with listed_count 0.
+  const res = fakeResult('single-shape.example.net', [{ subject: 'x', zone: 'zen.spamhaus.org' }]);
+  delete res.counts;
+  res.listedCount = 1;
+  const row = await db.checks.saveCheck(res);
+  assert.equal(row.listed_count, 1);
+});
+
+test('visitors: a record round-trips and an update keeps one row per browser', { skip }, async () => {
+  const rec = {
+    id: 'a'.repeat(32),
+    firstSeen: Date.now() - 60_000,
+    lastSeen: Date.now(),
+    hits: 3,
+    ip: '10.9.9.9',
+    browser: 'Chrome 126',
+    os: 'Windows 10/11',
+    user: 'admin',
+    timezone: 'Asia/Dhaka',
+  };
+  await db.visitors.saveVisitor(rec);
+  await db.visitors.saveVisitor({ ...rec, hits: 4, lastSeen: rec.lastSeen + 30_000 });
+
+  const stored = await db.visitors.listStoredVisitors();
+  const mine = stored.filter((v) => v.id === rec.id);
+  assert.equal(mine.length, 1, 'upsert, not duplicate rows');
+  assert.equal(mine[0].hits, 4);
+  assert.equal(mine[0].user, 'admin');
+  assert.equal(mine[0].timezone, 'Asia/Dhaka');
+});

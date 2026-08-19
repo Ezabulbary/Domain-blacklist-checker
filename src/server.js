@@ -17,10 +17,10 @@ import { removalGuide, KIND_LABEL } from './lib/removal.js';
 import { readiness, stillListed } from './lib/delist.js';
 import { createShare, getShare, MAX_BYTES as SHARE_MAX_BYTES } from './lib/share.js';
 import { login, getSession, destroySession } from './lib/sessions.js';
-import { beat as visitorBeat, markBye, listVisitors, onlineWindowSeconds, newVisitorId, isVisitorId } from './lib/visitors.js';
+import { beat as visitorBeat, markBye, listVisitors, onlineWindowSeconds, newVisitorId, isVisitorId, hydrate as hydrateVisitors, getVisitor } from './lib/visitors.js';
 import { buildResolver } from './lib/resolve.js';
 import { ALL_ZONES, CATEGORIES } from './lib/zones.js';
-import { dbEnabled } from './db/pool.js';
+import { dbEnabled, query as dbQuery } from './db/pool.js';
 import { db } from './db/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -195,14 +195,32 @@ function sessionOf(req) {
 }
 
 // Persist a successful check when a database is configured. Never let a DB
-// hiccup break the response. Persistence is best-effort here.
+// hiccup break the response. Persistence is best-effort here, but never
+// silent: the failure is logged and remembered so /api/health can say that
+// the database is configured yet saves are failing.
+let lastDbError = null;
 async function persist(result) {
   if (!dbEnabled() || !result.ok) return;
   try {
     await db.checks.saveCheck(result);
+    lastDbError = null;
   } catch (e) {
+    lastDbError = e.message;
     // eslint-disable-next-line no-console
     console.error('[db] saveCheck failed:', e.message);
+  }
+}
+
+// Mirror a visitor record to the database, same best-effort contract.
+async function persistVisitor(rec) {
+  if (!dbEnabled() || !rec) return;
+  try {
+    await db.visitors.saveVisitor(rec);
+    lastDbError = null;
+  } catch (e) {
+    lastDbError = e.message;
+    // eslint-disable-next-line no-console
+    console.error('[db] saveVisitor failed:', e.message);
   }
 }
 
@@ -296,7 +314,31 @@ export function buildServer() {
       : { ok: true, loginEnabled: true, authenticated: false };
   });
 
-  app.get('/api/health', async () => ({ status: 'ok', zones: ALL_ZONES.length, db: dbEnabled() }));
+  // Health names three DB states instead of one boolean: off (not configured),
+  // ok (a live round trip just succeeded), error (configured but unreachable,
+  // or the last save failed). "Connected but nothing saves" was invisible
+  // before; now it reads as db:"error" with the reason.
+  app.get('/api/health', async () => {
+    let dbStatus = 'off';
+    let dbError;
+    if (dbEnabled()) {
+      try {
+        await new Promise((resolve, reject) => {
+          const t = setTimeout(() => reject(new Error('database ping timed out')), 2500);
+          dbQuery('SELECT 1').then(
+            () => { clearTimeout(t); resolve(); },
+            (e) => { clearTimeout(t); reject(e); },
+          );
+        });
+        dbStatus = lastDbError ? 'error' : 'ok';
+        dbError = lastDbError || undefined;
+      } catch (e) {
+        dbStatus = 'error';
+        dbError = e.message;
+      }
+    }
+    return { status: 'ok', zones: ALL_ZONES.length, db: dbStatus, ...(dbError ? { dbError } : {}) };
+  });
 
   app.get('/api/zones', async (req, reply) => {
     if (!(await authOk(req, reply, 'zones:read'))) return;
@@ -430,16 +472,18 @@ export function buildServer() {
     if (!body || typeof body !== 'object') body = {};
     if (body.bye) {
       markBye(vid);
+      persistVisitor(getVisitor(vid)); // fire and forget
       return { ok: true };
     }
     const sess = sessionOf(req);
-    visitorBeat(vid, {
+    const rec = visitorBeat(vid, {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
       user: sess?.user,
       role: sess?.role,
       client: body,
     });
+    persistVisitor(rec); // fire and forget; the response never waits on the DB
     return { ok: true };
   });
 
@@ -527,7 +571,19 @@ export function buildServer() {
     if (!domain) return reply.code(400).send({ ok: false, error: 'missing ?domain=' });
     if (!(await authOk(req, reply, 'analyze:read'))) return;
     if (limited(req)) return reply.code(429).send({ ok: false, error: 'rate limit exceeded, slow down' });
-    return analyzeDomain(domain, { resolver });
+    const r = await analyzeDomain(domain, { resolver });
+    // The dashboard's single check runs through here, so this is the main
+    // path history is built from. The whole analyze payload is stored as the
+    // raw result; score and verdict come from its blocklist component.
+    if (r.ok) {
+      await persist({
+        ...r,
+        score: r.blacklist?.score ?? null,
+        verdict: r.blacklist?.verdict,
+        listedCount: r.blacklist?.listedCount ?? 0,
+      });
+    }
+    return r;
   });
 
   // Authentication health only (SPF / DKIM / DMARC / MX / PTR).
@@ -615,6 +671,15 @@ export function buildServer() {
       checkFn: withAuth ? undefined : checkCached,
     });
 
+    // The plain path persists inside checkCached; the audit path bypasses the
+    // cache, so its rows are saved here. Sequential on purpose: one connection
+    // trickle instead of a burst of hundreds after a big batch.
+    if (withAuth && dbEnabled()) {
+      for (const r of results) {
+        if (r?.ok) await persist(r);
+      }
+    }
+
     if ((req.query.format || '').toString().toLowerCase() === 'csv') {
       reply
         .header('content-type', 'text/csv; charset=utf-8')
@@ -631,6 +696,22 @@ export function buildServer() {
 // Start only when run directly (not when imported by tests).
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
+  // With a database configured, bring its schema up to date before serving.
+  // This is the step operators used to have to run by hand (npm run db:migrate)
+  // and forgetting it meant a "connected" database that silently saved
+  // nothing: every insert failed on missing tables. The server still starts if
+  // the database is down; it logs why and the health endpoint reports it.
+  if (dbEnabled()) {
+    try {
+      const { migrate } = await import('./db/migrate.js');
+      await migrate({ log: (m) => console.log('[db]', m) });
+      const stored = await db.visitors.listStoredVisitors();
+      const n = hydrateVisitors(stored);
+      if (n) console.log(`[db] restored ${n} visitor record(s)`);
+    } catch (e) {
+      console.error('[db] startup migration failed, database saves will not work:', e.message);
+    }
+  }
   const app = buildServer();
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? '0.0.0.0';
