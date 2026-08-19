@@ -31,23 +31,36 @@ const publicRow = (r) => ({
   createdAt: r.created_at ?? r.createdAt,
   lastUsedAt: r.last_used_at ?? r.lastUsedAt ?? null,
   revokedAt: r.revoked_at ?? r.revokedAt ?? null,
+  expiresAt: r.expires_at ?? r.expiresAt ?? null,
+  useCount: r.use_count ?? r.useCount ?? 0,
+  lastUsedIp: r.last_used_ip ?? r.lastUsedIp ?? null,
 });
+
+const isExpired = (row) => {
+  const exp = row.expires_at ?? row.expiresAt;
+  return Boolean(exp && new Date(exp).getTime() <= Date.now());
+};
 
 /**
  * Create a key.
  *
  * @param {object} opts
- *   name    what the key is for. Required in spirit, defaulted if absent.
- *   scopes  array of scope strings, or ['all:all']. Defaults to all:all so the
- *           old zero-argument call keeps its meaning.
- *   email   optional, ties the key to a user record.
+ *   name       what the key is for. Required in spirit, defaulted if absent.
+ *   scopes     array of scope strings, or ['all:all']. Defaults to all:all so
+ *              the old zero-argument call keeps its meaning.
+ *   email      optional, ties the key to a user record.
+ *   expiresAt  optional ISO timestamp or Date: the key stops working then.
+ *              Absent = never expires. A bounded lifetime is the production
+ *              default worth choosing; a leaked expiring key is a bounded
+ *              problem.
  * @returns { apiKey, key: {...}, persisted, invalidScopes }
  */
-export async function createApiKey({ name, scopes, email } = {}) {
+export async function createApiKey({ name, scopes, email, expiresAt } = {}) {
   const apiKey = newKey();
   const keyHash = hash(apiKey);
   const keyPrefix = prefixOf(apiKey);
   const label = (name && String(name).trim()) || 'Unnamed key';
+  const expIso = expiresAt ? new Date(expiresAt).toISOString() : null;
 
   const { scopes: clean, invalid } = normalizeScopes(scopes ?? [ALL_SCOPE]);
   // A key with no scopes could not call anything, which is never what someone
@@ -66,36 +79,51 @@ export async function createApiKey({ name, scopes, email } = {}) {
         const u = await db.users.upsertUserByEmail({ email: String(email).trim() });
         userId = u?.id ?? null;
       }
-      const row = await db.apikeys.createKey({ userId, name: label, keyHash, keyPrefix, scopes: granted });
+      const row = await db.apikeys.createKey({ userId, name: label, keyHash, keyPrefix, scopes: granted, expiresAt: expIso });
       return { apiKey, key: publicRow(row), persisted: true, invalidScopes: invalid };
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('[keys] database write failed, keeping the key in memory:', e.message);
-      const row = { id: ++memId, name: label, prefix: keyPrefix, scopes: granted, createdAt: new Date().toISOString(), revokedAt: null };
+      const row = { id: ++memId, name: label, prefix: keyPrefix, scopes: granted, createdAt: new Date().toISOString(), revokedAt: null, expiresAt: expIso, useCount: 0 };
       mem.set(keyHash, row);
       return { apiKey, key: publicRow(row), persisted: false, dbFailed: true, invalidScopes: invalid };
     }
   }
 
-  const row = { id: ++memId, name: label, prefix: keyPrefix, scopes: granted, createdAt: new Date().toISOString(), revokedAt: null };
+  const row = { id: ++memId, name: label, prefix: keyPrefix, scopes: granted, createdAt: new Date().toISOString(), revokedAt: null, expiresAt: expIso, useCount: 0 };
   mem.set(keyHash, row);
   return { apiKey, key: publicRow(row), persisted: false, invalidScopes: invalid };
 }
 
 /**
  * Validate a presented key.
- * @returns { scopes, keyId, name, plan, userId? } or null.
+ * @param {string} apiKey
+ * @param {object} [meta]  { ip } of the caller, recorded as usage.
+ * @returns { scopes, keyId, name, plan, userId? }, { expired: true, ... } for
+ *          a key past its lifetime (a distinct answer, so the caller can say
+ *          "expired" rather than a misleading "invalid"), or null.
  */
-export async function validateApiKey(apiKey) {
+export async function validateApiKey(apiKey, meta = {}) {
   if (!apiKey || typeof apiKey !== 'string') return null;
   const keyHash = hash(apiKey);
+
+  const expiredAnswer = (r) => ({ expired: true, name: r.name, expiresAt: r.expires_at ?? r.expiresAt });
+  const useMem = (m) => {
+    if (m.revokedAt) return null;
+    if (isExpired(m)) return expiredAnswer(m);
+    m.useCount = (m.useCount || 0) + 1;
+    m.lastUsedAt = new Date().toISOString();
+    if (meta.ip) m.lastUsedIp = String(meta.ip).slice(0, 60);
+    return { scopes: m.scopes, keyId: m.id, name: m.name, plan: 'free' };
+  };
 
   if (dbEnabled()) {
     try {
       const row = await db.apikeys.getByHash(keyHash);
       if (row) {
+        if (isExpired(row)) return expiredAnswer(row);
         // Best effort. A slow write here would tax every authenticated request.
-        db.apikeys.touch(row.id).catch(() => {});
+        db.apikeys.touch(row.id, meta.ip ?? null).catch(() => {});
         return { scopes: row.scopes, keyId: row.id, name: row.name, userId: row.user_id, plan: 'free' };
       }
       // Legacy: a key issued before scopes existed, stored plainly on the user
@@ -111,21 +139,27 @@ export async function validateApiKey(apiKey) {
       console.error('[keys] database read failed, checking the memory store:', e.message);
       const m2 = mem.get(keyHash);
       // A key the memory store knows about has a definite answer even during
-      // the outage: live keys verify, revoked keys are invalid. Only a key
-      // with no record anywhere is genuinely unverifiable.
-      if (m2) return m2.revokedAt ? null : { scopes: m2.scopes, keyId: m2.id, name: m2.name, plan: 'free' };
+      // the outage: live keys verify, revoked and expired keys are refused.
+      // Only a key with no record anywhere is genuinely unverifiable.
+      if (m2) return useMem(m2);
       throw new Error('database unreachable, cannot verify this key');
     }
     // DB answered "no such key"; a memory key from an earlier outage may still
     // exist on this instance.
     const m3 = mem.get(keyHash);
-    if (m3 && !m3.revokedAt) return { scopes: m3.scopes, keyId: m3.id, name: m3.name, plan: 'free' };
+    if (m3) return useMem(m3);
     return null;
   }
 
   const m = mem.get(keyHash);
-  if (!m || m.revokedAt) return null;
-  return { scopes: m.scopes, keyId: m.id, name: m.name, plan: 'free' };
+  if (!m) return null;
+  return useMem(m);
+}
+
+/** Count of live (unrevoked, unexpired) keys, for the creation cap. */
+export async function countActiveKeys() {
+  const rows = await listApiKeys();
+  return rows.filter((r) => !r.revokedAt && !(r.expiresAt && new Date(r.expiresAt).getTime() <= Date.now())).length;
 }
 
 export async function listApiKeys(userId = null) {

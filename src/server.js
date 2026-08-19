@@ -10,7 +10,7 @@ import { checkDomain } from './lib/check.js';
 import { checkMany, resultsToCsv } from './lib/bulk.js';
 import { analyzeDomain } from './lib/analyze.js';
 import { checkAuth } from './lib/auth.js';
-import { createApiKey, validateApiKey, listApiKeys, revokeApiKey } from './lib/apikeys.js';
+import { createApiKey, validateApiKey, listApiKeys, revokeApiKey, countActiveKeys } from './lib/apikeys.js';
 import { SCOPES, ALL_SCOPE, hasScope, normalizeScopes } from './lib/scopes.js';
 import { getCalibration, isTrusted, summarize } from './lib/calibrate.js';
 import { removalGuide, KIND_LABEL } from './lib/removal.js';
@@ -119,11 +119,17 @@ async function authOk(req, reply, scope) {
   }
   let v;
   try {
-    v = await validateApiKey(key);
+    v = await validateApiKey(key, { ip: req.ip });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error('[auth] key verification failed:', e.message);
     reply.code(503).send({ ok: false, error: 'the server cannot verify API keys right now (database unreachable). Try again shortly, or retry without a key.' });
+    return false;
+  }
+  if (v && v.expired) {
+    // A distinct answer: whoever holds this key should learn it aged out, not
+    // that it is somehow wrong.
+    reply.code(401).send({ ok: false, error: `this API key expired on ${String(v.expiresAt).slice(0, 10)}. Create a new one.`, expired: true });
     return false;
   }
   if (!v) {
@@ -529,8 +535,27 @@ export function buildServer() {
     }
     if (!scopes.length) return reply.code(400).send({ ok: false, error: 'select at least one scope' });
 
+    // Optional lifetime: whole days, up to ten years. 0/null/absent = never.
+    let expiresAt = null;
+    if (body.expiresInDays !== undefined && body.expiresInDays !== null && body.expiresInDays !== 0) {
+      const days = Number(body.expiresInDays);
+      if (!Number.isInteger(days) || days < 1 || days > 3650) {
+        return reply.code(400).send({ ok: false, error: 'expiresInDays must be a whole number of days between 1 and 3650, or omitted for no expiry' });
+      }
+      expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    // A bounded key count keeps a compromised admin session from minting keys
+    // without limit, and keeps the list a human can actually audit.
+    const MAX_KEYS = Number(process.env.DBC_MAX_KEYS ?? 50);
     try {
-      const r = await createApiKey({ name, scopes, email: body.email });
+      if ((await countActiveKeys()) >= MAX_KEYS) {
+        return reply.code(409).send({ ok: false, error: `key limit reached (${MAX_KEYS} active keys). Revoke keys you no longer use first, or raise DBC_MAX_KEYS.` });
+      }
+    } catch { /* counting is best-effort; creation still guarded by rate limit */ }
+
+    try {
+      const r = await createApiKey({ name, scopes, email: body.email, expiresAt });
       return {
         ok: true,
         apiKey: r.apiKey,

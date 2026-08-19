@@ -420,6 +420,11 @@
     .key-item-meta { flex: none; text-align: right; }
     .key-del { padding: 8px 16px; font-size: 12.5px; flex: none; }
     .key-del.danger { border-color: var(--bad); color: var(--bad); }
+    .key-out-row { display: flex; gap: 8px; align-items: stretch; }
+    .key-out-row .key-out { flex: 1; min-width: 0; }
+    .key-out-row .key-copy { flex: none; }
+    .key-expired { color: var(--bad); font-weight: 700; }
+    .key-item.is-expired .key-item-mask { opacity: .55; }
     /* Visitors page */
     .vis-sum { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
     .vis-stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
@@ -576,6 +581,7 @@ example.com"></textarea>
           <li><b>API key (optional):</b> <code>POST /api/keys</code> with <code>{ "name", "scopes" }</code> returns a key; send it as the <code>X-API-Key</code> header for a higher rate limit. The server can require keys with <code>DBC_REQUIRE_KEY=true</code>.</li>
           <li><b>Scopes:</b> each key is limited to the scopes it was created with (shown next to each endpoint above). Calling outside them returns <b>403</b> naming the missing scope. <code>all:all</code> grants everything. Scopes cannot be changed after creation, so make a new key instead. <code>GET /api/scopes</code> lists them all.</li>
           <li><b>The key is shown once.</b> Only a hash of it is stored, so it cannot be displayed again. Lose it and you create a new one. <code>GET /api/keys</code> lists your keys by prefix, <code>DELETE /api/keys/:id</code> revokes one.</li>
+          <li><b>Expiry:</b> pass <code>expiresInDays</code> (1 to 3650) at creation and the key refuses to work after that date, answering <b>401</b> with the expiry date. Omit it for a key that never expires. Usage is tracked per key (count, last use, last IP) and shown in the list above. At most <code>DBC_MAX_KEYS</code> keys (default 50) can be active at once.</li>
           <li><code>verdict</code>: <code>clean</code> · <code>listed</code> · <code>blacklisted</code> (a critical/Spamhaus hit) · <code>unknown</code> (only timeouts).</li>
           <li>A row's <code>state</code> is <code>listed</code> / <code>ok</code> / <code>timeout</code>. A <b>timeout is never treated as clean</b>.</li>
           <li>Rate limit: <code>DBC_RATE_MAX</code> requests/min per IP (default 30). Bulk costs more, in proportion to the domain count. A 429 means slow down.</li>
@@ -920,7 +926,15 @@ example.com"></textarea>
         if (!j.ok) { box.innerHTML = '<div class="mini" style="padding:8px 0">' + esc(j.error || 'Could not load keys.') + '</div>'; return; }
         const keys = (j.keys || []).filter((k) => !k.revokedAt);
         if (!keys.length) { box.innerHTML = '<div class="mini" style="padding:8px 0">No keys yet. Create one to call the API from scripts.</div>'; return; }
-        box.innerHTML = keys.map((k) => '<div class="key-item" data-id="' + esc(String(k.id)) + '">'
+        box.innerHTML = keys.map((k) => {
+          const expired = k.expiresAt && new Date(k.expiresAt).getTime() <= Date.now();
+          const expiry = expired
+            ? '<span class="key-expired">expired ' + esc(String(k.expiresAt).slice(0, 10)) + '</span>'
+            : k.expiresAt ? 'expires ' + esc(String(k.expiresAt).slice(0, 10)) : 'never expires';
+          const usage = (k.useCount ? 'used ' + Number(k.useCount).toLocaleString() + '×' : 'never used')
+            + (k.lastUsedAt ? ', last ' + esc(String(k.lastUsedAt).slice(0, 10)) : '')
+            + (k.lastUsedIp ? ' from ' + esc(k.lastUsedIp) : '');
+          return '<div class="key-item' + (expired ? ' is-expired' : '') + '" data-id="' + esc(String(k.id)) + '">'
           + '<div class="key-item-main">'
           + '<div class="key-item-name">' + esc(k.name) + '</div>'
           + '<code class="key-item-mask">' + esc(k.prefix || 'dbc_') + '&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</code>'
@@ -928,9 +942,11 @@ example.com"></textarea>
               '<span class="scope-chip' + (sc === 'all:all' ? ' is-all' : '') + '">' + esc(sc) + '</span>').join(' ') + '</div>'
           + '</div>'
           + '<div class="key-item-meta mini">' + (k.createdAt ? 'created ' + esc(String(k.createdAt).slice(0, 10)) : '')
-          + (k.lastUsedAt ? ' &middot; last used ' + esc(String(k.lastUsedAt).slice(0, 10)) : '') + '</div>'
+          + ' &middot; ' + expiry
+          + '<br>' + usage + '</div>'
           + '<button class="ghost key-del" type="button">Delete</button>'
-          + '</div>').join('');
+          + '</div>';
+        }).join('');
         box.querySelectorAll('.key-del').forEach((btn) => btn.addEventListener('click', async () => {
           // Two-step: the first click arms, the second actually revokes.
           if (btn.dataset.armed !== '1') {
@@ -1099,6 +1115,9 @@ example.com"></textarea>
     // The form re-renders on every scope change and on every validation error, so
     // the typed name lives here rather than only in the input it would destroy.
     let keyName = '';
+    // Key lifetime in days; 0 = never expires. 90 is the default on purpose:
+    // an expiring key is the production-grade choice, "never" is the opt-in.
+    let keyExpiry = 90;
 
     // Closing also wipes the modal body: the one-time plaintext key lives in a
     // value attribute there, and it must not stay in the DOM after the modal.
@@ -1113,6 +1132,7 @@ example.com"></textarea>
       picked = [ALL_SCOPE];
       listOpen = false;
       keyName = '';
+      keyExpiry = 90;
       keyModal.classList.remove('hidden');
       keyModalBody.innerHTML = '<h2 class="modal-t">Create API Key</h2>'
         + '<div class="mini"><span class="spinner"></span> Loading scopes…</div>';
@@ -1150,6 +1170,13 @@ example.com"></textarea>
       for (const s of scopeCatalog) h += opt(s.key, s.label, s.detail);
       h += '</div></div>';
       h += '<div class="f-hint">For security reasons, the scopes cannot be changed after the API key is created.</div>';
+
+      h += '<label class="f-label" for="key-expiry">Expires</label>';
+      h += '<select class="f-input" id="key-expiry">'
+        + [[30, 'After 30 days'], [90, 'After 90 days (recommended)'], [365, 'After 1 year'], [0, 'Never']]
+          .map(([v, l]) => '<option value="' + v + '"' + (keyExpiry === v ? ' selected' : '') + '>' + l + '</option>').join('')
+        + '</select>';
+      h += '<div class="f-hint">An expired key stops working on its own. A leaked key with an expiry is a bounded problem; one that lives forever is not.</div>';
 
       h += '<div class="f-note"><span class="i">i</span><span>'
         + (isAll
@@ -1197,6 +1224,7 @@ example.com"></textarea>
         renderKeyForm();
       });
 
+      document.getElementById('key-expiry').addEventListener('change', (ev) => { keyExpiry = Number(ev.target.value); });
       document.getElementById('key-cancel').addEventListener('click', closeKeyModal);
       document.getElementById('key-create').addEventListener('click', doCreate);
     }
@@ -1212,7 +1240,7 @@ example.com"></textarea>
         const res = await fetch('/api/keys', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name, scopes: picked }),
+          body: JSON.stringify({ name, scopes: picked, expiresInDays: keyExpiry || undefined }),
         });
         const data = await res.json();
         if (!data.ok) { renderKeyForm(data.error || 'Could not create the key.'); return; }
@@ -1229,21 +1257,27 @@ example.com"></textarea>
       let h = '<h2 class="modal-t">API key created</h2>';
       h += '<div class="modal-sub">Copy it now. It is stored only as a hash and cannot be shown again.</div>';
       h += '<label class="f-label" for="new-key-val">' + esc(k.name || 'API key') + '</label>';
-      h += '<input class="key-out" id="new-key-val" readonly spellcheck="false" value="' + esc(data.apiKey) + '">';
+      h += '<div class="key-out-row">'
+        + '<input class="key-out" id="new-key-val" readonly spellcheck="false" value="' + esc(data.apiKey) + '">'
+        + '<button class="ghost key-copy" type="button" id="new-key-copy">Copy</button>'
+        + '</div>';
       h += '<label class="f-label">Scopes</label><div>'
         + (k.scopes || []).map((s) => '<span class="scope-chip' + (s === ALL_SCOPE ? ' is-all' : '') + '">' + esc(s) + '</span> ').join('')
+        + '</div>';
+      h += '<div class="mini" style="margin-top:8px">'
+        + (k.expiresAt ? 'Expires ' + esc(String(k.expiresAt).slice(0, 10)) + '. After that the key stops working on its own.' : 'Never expires.')
         + '</div>';
       if (!data.persisted) {
         h += '<div class="f-note"><span class="i">i</span><span>' + esc(data.note || 'This key is held in memory and is lost when the server restarts.') + '</span></div>';
       }
       h += '<div class="modal-actions"><span class="spacer"></span>'
-        + '<button class="ghost" type="button" id="new-key-copy">Copy</button>'
         + '<button type="button" id="new-key-done">Done</button></div>';
       keyModalBody.innerHTML = h;
-      document.getElementById('new-key-copy').addEventListener('click', async (ev) => {
-        try { await navigator.clipboard.writeText(data.apiKey); ev.currentTarget.textContent = 'Copied!'; }
-        catch { document.getElementById('new-key-val').select(); ev.currentTarget.textContent = 'Press Ctrl+C'; }
-        setTimeout(() => { ev.currentTarget.textContent = 'Copy'; }, 1400);
+      const copyBtn = document.getElementById('new-key-copy');
+      copyBtn.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(data.apiKey); copyBtn.textContent = 'Copied!'; }
+        catch { document.getElementById('new-key-val').select(); copyBtn.textContent = 'Press Ctrl+C'; }
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1400);
       });
       document.getElementById('new-key-done').addEventListener('click', closeKeyModal);
     }

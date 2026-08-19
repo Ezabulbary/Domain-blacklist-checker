@@ -165,3 +165,23 @@ test('visitors: a record round-trips and an update keeps one row per browser', {
   assert.equal(mine[0].user, 'admin');
   assert.equal(mine[0].timezone, 'Asia/Dhaka');
 });
+
+test('api keys: expiry is stored and touch counts usage with the caller IP', { skip }, async () => {
+  const exp = new Date(Date.now() + 86_400_000).toISOString();
+  const row = await db.apikeys.createKey({
+    name: 'expiring db key',
+    keyHash: 'h'.repeat(64),
+    keyPrefix: 'dbc_test0000',
+    scopes: ['check:read'],
+    expiresAt: exp,
+  });
+  assert.ok(row.expires_at, 'expiry stored');
+  assert.equal(row.use_count, 0);
+
+  await db.apikeys.touch(row.id, '10.7.7.7');
+  await db.apikeys.touch(row.id, null);
+  const back = await db.apikeys.getByHash('h'.repeat(64));
+  assert.equal(back.use_count, 2);
+  assert.equal(back.last_used_ip, '10.7.7.7', 'a null IP never erases the last known one');
+  assert.ok(back.last_used_at);
+});

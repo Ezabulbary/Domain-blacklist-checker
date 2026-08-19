@@ -1,19 +1,23 @@
 import { query } from '../pool.js';
 
 // Rows never carry key_hash outward. The hash is only ever a lookup input.
-const COLS = 'id, user_id, name, key_prefix, scopes, last_used_at, revoked_at, created_at';
+const COLS = 'id, user_id, name, key_prefix, scopes, last_used_at, revoked_at, created_at, expires_at, use_count, last_used_ip';
 
-export async function createKey({ userId = null, name, keyHash, keyPrefix, scopes }) {
+export async function createKey({ userId = null, name, keyHash, keyPrefix, scopes, expiresAt = null }) {
   const { rows } = await query(
-    `INSERT INTO api_keys (user_id, name, key_hash, key_prefix, scopes)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO api_keys (user_id, name, key_hash, key_prefix, scopes, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING ${COLS}`,
-    [userId, name, keyHash, keyPrefix, scopes],
+    [userId, name, keyHash, keyPrefix, scopes, expiresAt],
   );
   return rows[0];
 }
 
-/** Find a live key by the hash of the presented secret. */
+/**
+ * Find a live (unrevoked) key by the hash of the presented secret. Expired
+ * rows are still returned: the caller turns them into a distinct "expired"
+ * answer, which beats a generic "invalid key" for whoever holds it.
+ */
 export async function getByHash(keyHash) {
   const { rows } = await query(
     `SELECT ${COLS} FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL`,
@@ -23,12 +27,18 @@ export async function getByHash(keyHash) {
 }
 
 /**
- * Stamp last use. Deliberately not awaited on the request path: a slow write
- * here would slow down every authenticated call, and losing one timestamp
- * matters less than that.
+ * Stamp last use: timestamp, counter and caller IP. Deliberately not awaited
+ * on the request path: a slow write here would slow down every authenticated
+ * call, and losing one sample matters less than that.
  */
-export async function touch(id) {
-  await query('UPDATE api_keys SET last_used_at = now() WHERE id = $1', [id]);
+export async function touch(id, ip = null) {
+  await query(
+    `UPDATE api_keys
+     SET last_used_at = now(), use_count = use_count + 1,
+         last_used_ip = COALESCE($2, last_used_ip)
+     WHERE id = $1`,
+    [id, ip],
+  );
 }
 
 export async function listKeys(userId = null) {
