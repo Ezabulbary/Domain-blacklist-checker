@@ -43,6 +43,11 @@ DBC_TRUST_PROXY=true
 # Database (Supabase session pooler, port 5432):
 DATABASE_URL=postgresql://postgres.<project-ref>:<PASSWORD>@aws-0-<region>.pooler.supabase.com:5432/postgres
 DATABASE_SSL=true
+# If the logs or /api/health say "self-signed certificate in certificate
+# chain": download the provider CA (Supabase: Project Settings -> Database ->
+# SSL certificate) and set DATABASE_CA to its file path, or paste the PEM
+# text itself straight into the variable (works well on Render/Heroku).
+# DATABASE_CA=/etc/secrets/supabase-ca.crt
 
 # DNS resolvers used for blocklist queries (see the note below):
 DBC_RESOLVERS=127.0.0.1

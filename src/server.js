@@ -20,7 +20,7 @@ import { login, getSession, destroySession } from './lib/sessions.js';
 import { beat as visitorBeat, markBye, listVisitors, onlineWindowSeconds, newVisitorId, isVisitorId, hydrate as hydrateVisitors, getVisitor } from './lib/visitors.js';
 import { buildResolver } from './lib/resolve.js';
 import { ALL_ZONES, CATEGORIES } from './lib/zones.js';
-import { dbEnabled, query as dbQuery } from './db/pool.js';
+import { dbEnabled, query as dbQuery, dbErrorHint } from './db/pool.js';
 import { db } from './db/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -343,7 +343,12 @@ export function buildServer() {
         dbError = e.message;
       }
     }
-    return { status: 'ok', zones: ALL_ZONES.length, db: dbStatus, ...(dbError ? { dbError } : {}) };
+    const dbHint = dbError ? dbErrorHint(dbError) : null;
+    return {
+      status: 'ok', zones: ALL_ZONES.length, db: dbStatus,
+      ...(dbError ? { dbError } : {}),
+      ...(dbHint ? { dbHint } : {}),
+    };
   });
 
   app.get('/api/zones', async (req, reply) => {
@@ -735,6 +740,8 @@ if (isMain) {
       if (n) console.log(`[db] restored ${n} visitor record(s)`);
     } catch (e) {
       console.error('[db] startup migration failed, database saves will not work:', e.message);
+      const hint = dbErrorHint(e.message);
+      if (hint) console.error('[db] hint:', hint);
     }
   }
   const app = buildServer();

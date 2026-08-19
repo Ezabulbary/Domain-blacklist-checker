@@ -4,19 +4,40 @@ import pg from 'pg';
 const { Pool } = pg;
 
 // TLS config for the DB connection. TLS is enabled with DATABASE_SSL=true and,
-// by default, the server certificate IS verified. Provide a CA bundle with
-// DATABASE_CA (a file path) for private CAs. Verification can only be turned
-// off with an explicit DATABASE_SSL_INSECURE=true. Never silently.
-function sslConfig() {
-  if (process.env.DATABASE_SSL !== 'true') return undefined;
-  if (process.env.DATABASE_SSL_INSECURE === 'true') {
+// by default, the server certificate IS verified. Managed providers (Supabase
+// and friends) sign with their own CA, which Node does not trust out of the
+// box; give it to DATABASE_CA either as a file path or as the PEM text itself
+// (handy on hosts like Render where an env var is easier than a file; literal
+// \n sequences are unescaped). Verification can only be turned off with an
+// explicit DATABASE_SSL_INSECURE=true. Never silently.
+export function sslConfig(env = process.env) {
+  if (env.DATABASE_SSL !== 'true') return undefined;
+  if (env.DATABASE_SSL_INSECURE === 'true') {
     // eslint-disable-next-line no-console
     console.warn('[db] DATABASE_SSL_INSECURE=true. Server certificate verification is DISABLED');
     return { rejectUnauthorized: false };
   }
   const ssl = { rejectUnauthorized: true };
-  if (process.env.DATABASE_CA) ssl.ca = readFileSync(process.env.DATABASE_CA, 'utf8');
+  if (env.DATABASE_CA) {
+    const v = env.DATABASE_CA.trim();
+    ssl.ca = v.includes('-----BEGIN') ? v.replace(/\\n/g, '\n') : readFileSync(v, 'utf8');
+  }
   return ssl;
+}
+
+/**
+ * A human-actionable hint for a known database error, or null. Surfaced by
+ * /api/health next to the raw message, because "self-signed certificate in
+ * certificate chain" alone sends the operator down the wrong road (the fix is
+ * a CA setting, not a certificate problem on their side).
+ */
+export function dbErrorHint(message) {
+  if (/self[- ]signed certificate/i.test(message || '')) {
+    return 'The database uses its provider\'s own CA. Set DATABASE_CA to that CA certificate '
+      + '(Supabase: Project Settings, Database, SSL, download the CA cert; pass a file path or paste the PEM itself), then restart. '
+      + 'DATABASE_SSL_INSECURE=true also works but disables verification; use it only as a last resort.';
+  }
+  return null;
 }
 
 // pg returns BIGINT (OID 20) as a string by default to avoid precision loss.
