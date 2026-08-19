@@ -499,16 +499,25 @@
     .login-overlay.hidden { display: none; }
     /* display:block beats the global `form { display:flex }` used by the
        search bars, which would otherwise smear this form into one row. */
-    .login-card { display: block; width: 100%; max-width: 400px;
-      background: linear-gradient(180deg, var(--card2), var(--card));
-      border: 1px solid var(--line2); border-radius: 16px; padding: 34px 34px 30px;
-      box-shadow: 0 20px 60px rgba(14,26,43,.22); }
+    .login-col { display: flex; flex-direction: column; align-items: center; gap: 18px; width: 100%; max-width: 440px; }
+    .login-card { display: block; width: 100%; max-width: 440px; text-align: center;
+      background: var(--card);
+      border: 1px solid var(--line); border-radius: 16px; padding: 36px 34px 26px;
+      box-shadow: 0 10px 30px rgba(11,28,48,.06); }
     .login-card .f-input { width: 100%; }
-    .login-card h2 { margin: 0 0 4px; font-size: 22px; letter-spacing: -.01em; }
-    .login-sub { color: var(--muted); font-size: 13.5px; margin-bottom: 20px; }
+    .login-icon { width: 56px; height: auto; display: block; margin: 0 auto 18px; }
+    .login-title { margin: 0 0 8px; font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
+    .login-sub { color: var(--muted); font-size: 14.5px; line-height: 1.55; margin-bottom: 18px; }
+    /* The alert box only exists while it has something to say. */
+    .login-err { display: none; }
+    .login-err:not(:empty) { display: block; background: rgba(255,218,214,.35);
+      border: 1px solid rgba(186,26,26,.35); color: var(--bad); font-size: 13.5px;
+      border-radius: 10px; padding: 11px 14px; margin: 0 0 6px; }
+    .login-card .f-label { text-align: left; }
     .login-card .f-input { margin-bottom: 4px; }
-    .login-err { color: var(--bad); font-size: 13px; min-height: 18px; margin: 10px 0 2px; }
-    .login-card button[type="submit"] { width: 100%; margin-top: 8px; }
+    .login-card button[type="submit"] { width: 100%; margin-top: 20px; border-radius: 12px; padding: 13px 24px; }
+    .login-note { color: var(--muted); font-size: 12.5px; margin-top: 14px; }
+    .login-foot { color: var(--muted); font-size: 12.5px; }
     /* Who is logged in, top right of the page. */
     /* API hero strip */
     .api-hero { display: flex; gap: 24px; align-items: center; justify-content: space-between; flex-wrap: wrap;
@@ -738,22 +747,21 @@ example.com"></textarea>
     </div>
 
     <div id="login-overlay" class="login-overlay hidden">
-      <form class="login-card" id="login-form">
-        <h2 class="login-h">
-          <img class="login-logo-full hidden" alt="deliverly.ai"
-            src="/Deloverly%20Logo%20-%20Colroed.svg"
-            onerror="if (this.src.indexOf('Colroed') !== -1) { this.src = '/Deliverly%20Logo%20-%20Colored.svg'; } else { this.remove(); }"
-            onload="this.classList.remove('hidden'); var c = document.getElementById('login-compact'); if (c) c.classList.add('hidden');">
-          <span id="login-compact" class="login-compact"><img src="/Deloverly%20Icon%20-%20Colored.svg" onerror="brandIconFallback(this)" alt="" class="login-logo"><span>deliverly<span class="brand-ai">.ai</span></span></span>
-        </h2>
-        <div class="login-sub">Sign in to open the dashboard.</div>
-        <label class="f-label" for="login-user">Username</label>
-        <input class="f-input" id="login-user" autocomplete="username" spellcheck="false" autofocus />
-        <label class="f-label" for="login-pass">Password</label>
-        <input class="f-input" id="login-pass" type="password" autocomplete="current-password" />
-        <div class="login-err" id="login-err"></div>
-        <button type="submit" id="login-btn">Sign in</button>
-      </form>
+      <div class="login-col">
+        <form class="login-card" id="login-form">
+          <img class="login-icon" alt="" src="/Deloverly%20Icon%20-%20Colored.svg" onerror="brandIconFallback(this)">
+          <h2 class="login-title">Domain Blacklist Checker</h2>
+          <div class="login-sub">Blocklists, SPF / DKIM / DMARC health and <span class="brand-ai">deliverability</span> score for your domains.</div>
+          <div class="login-err" id="login-err"></div>
+          <label class="f-label" for="login-user">Username</label>
+          <input class="f-input" id="login-user" autocomplete="username" spellcheck="false" autofocus />
+          <label class="f-label" for="login-pass">Password</label>
+          <input class="f-input" id="login-pass" type="password" autocomplete="current-password" />
+          <button type="submit" id="login-btn">Sign in</button>
+          <div class="login-note">Sign in with an authorised account.</div>
+        </form>
+        <div class="login-foot">Deliverly &middot; internal tool</div>
+      </div>
     </div>
 
     <div id="key-modal" class="modal hidden">
