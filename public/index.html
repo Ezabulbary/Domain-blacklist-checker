@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Domain Blacklist Checker</title>
+  <title>Deliverly.ai</title>
+  <link rel="icon" type="image/svg+xml" href="/brand-icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -34,10 +35,12 @@
       display: flex; flex-direction: column; padding: 22px 14px 18px;
       position: sticky; top: 0; height: 100vh; overflow-y: auto; }
     .side-brand { display: flex; gap: 11px; align-items: center; padding: 2px 8px 20px; }
-    .logo-mark { width: 34px; height: 34px; border-radius: 9px; flex: none;
-      background: var(--accent); }
+    .logo-mark { width: 38px; height: auto; flex: none; display: block; }
+    .brand-ai { color: var(--accent); }
     .brand-txt { display: flex; flex-direction: column; line-height: 1.15; }
-    .brand-t { font-weight: 800; font-size: 14.5px; letter-spacing: -.01em; }
+    .brand-t { font-weight: 800; font-size: 17px; letter-spacing: -.02em; }
+    .login-h { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; }
+    .login-logo { width: 34px; height: auto; }
     .brand-s { color: var(--muted); font-size: 12px; font-weight: 600; }
     .side-label { font-size: 10.5px; font-weight: 800; text-transform: uppercase;
       letter-spacing: .12em; color: var(--muted); margin: 8px 10px 8px; }
@@ -178,9 +181,7 @@
     .panel-link:hover { text-decoration: underline; }
     .ohealth { border-color: rgba(0,76,181,.20); background: var(--bg2); display: flex; flex-direction: column; overflow: hidden; }
     .ohealth-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px 0 8px; }
-    .ohealth .logo-mini { width: 30px; height: 30px; border-radius: 8px; background: var(--accent);
-      display: grid; place-items: center; }
-    .ohealth .logo-mini svg { width: 18px; height: 18px; stroke: #fff; }
+    .ohealth .logo-mini { width: 32px; height: auto; display: block; }
     .ring-wrap { position: relative; width: 190px; height: 190px; display: grid; place-items: center; }
     .ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
     .ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -562,8 +563,8 @@
   <div class="app">
     <aside class="sidebar" id="sidebar">
       <div class="side-brand">
-        <span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 34 34" width="34" height="34"><path d="M9 17.5l5.5 5.5L25 12" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        <div class="brand-txt"><span class="brand-t">Domain Blacklist</span><span class="brand-s">Checker</span></div>
+        <img class="logo-mark" src="/brand-icon.svg" alt="deliverly.ai">
+        <div class="brand-txt"><span class="brand-t">deliverly<span class="brand-ai">.ai</span></span><span class="brand-s">Domain health checker</span></div>
       </div>
       <nav class="side-nav" aria-label="Main menu">
         <div class="side-label">Menu</div>
@@ -694,7 +695,7 @@ example.com"></textarea>
 
     <div id="login-overlay" class="login-overlay hidden">
       <form class="login-card" id="login-form">
-        <h2>Domain Blacklist Checker</h2>
+        <h2 class="login-h"><img src="/brand-icon.svg" alt="" class="login-logo"><span>deliverly<span class="brand-ai">.ai</span></span></h2>
         <div class="login-sub">Sign in to open the dashboard.</div>
         <label class="f-label" for="login-user">Username</label>
         <input class="f-input" id="login-user" autocomplete="username" spellcheck="false" autofocus />
@@ -1542,7 +1543,7 @@ example.com"></textarea>
       // Left: overall health with the big score ring.
       h += '<div class="card ohealth">';
       h += '<div class="panel-head"><span class="panel-label blue">Overall Health</span>'
-        + '<span class="logo-mini"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span></div>';
+        + '<img class="logo-mini" src="/brand-icon.svg" alt=""></div>';
       h += '<div class="ohealth-body">' + bigRing(d.riskScore);
       h += '<span class="standing-pill ' + sCls + '">'
         + '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 7l-8.5 9L6 12.5"/><path d="M22 7l-8.5 9"/></svg>'
