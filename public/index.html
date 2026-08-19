@@ -451,7 +451,7 @@
        search boxes that would only answer 401. */
     body.share-view #single-form, body.share-view #lists-hint,
     body.share-view #bulk-form, body.share-view .bulk-controls,
-    body.share-view #goto-auth { display: none; }
+    body.share-view .share-row, body.share-view #goto-auth { display: none; }
     .dns-tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
     .dns-tbl td { padding: 10px 12px 10px 0; border-top: 1px solid var(--line); vertical-align: top; }
     .dns-tbl tr:first-child td { border-top: none; }
@@ -1295,6 +1295,9 @@ mail.contoso.org"></textarea>
 
     sForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      // A shared page is a frozen snapshot: it never starts a live check, even
+      // if the form were somehow resurrected. The server answers 401 anyway.
+      if (IS_SHARE_PAGE) return;
       const domain = q.value.trim();
       if (!domain) return;
       go.disabled = true;
@@ -1861,6 +1864,7 @@ mail.contoso.org"></textarea>
     };
 
     bGo.addEventListener('click', async () => {
+      if (IS_SHARE_PAGE) return; // frozen snapshot, never a live run
       if (running) { cancel = true; bGo.textContent = 'Stopping…'; return; }
 
       let domains = dedupe(parseList(bInput.value));
@@ -1989,8 +1993,6 @@ mail.contoso.org"></textarea>
         }
         sharedView = j;
         document.body.classList.add('share-view');
-        document.getElementById('page-title').textContent = 'Shared report';
-        document.getElementById('page-sub').textContent = 'A frozen snapshot shared with you. It reflects the moment it was created.';
         if (j.kind === 'single') {
           renderAnalyze(j.data);
         } else {
@@ -1998,6 +2000,16 @@ mail.contoso.org"></textarea>
           lastResults = (j.data.results || []).filter(Boolean);
           renderSharedBulk(j);
         }
+        // Hard read-only, both kinds: the machinery that could start a check
+        // leaves the DOM outright instead of being hidden with CSS, so even
+        // devtools cannot un-hide a search box on a shared page. The share
+        // button goes too; a viewer shares by copying the address bar.
+        for (const sel of ['#single-form', '#lists-hint', '#bulk-form', '.bulk-controls', '.share-row']) {
+          document.querySelectorAll(sel).forEach((el) => el.remove());
+        }
+        // After any tab switch above, so a pane's own heading cannot win.
+        document.getElementById('page-title').textContent = 'Shared report';
+        document.getElementById('page-sub').textContent = 'A frozen snapshot shared with you. It reflects the moment it was created, and nothing new can be checked from this page.';
       } catch (e) {
         sOut.innerHTML = '<div class="card err">Request failed: ' + esc(e.message) + '</div>';
       }
