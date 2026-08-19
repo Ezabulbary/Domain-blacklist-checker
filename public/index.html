@@ -587,7 +587,7 @@
        search boxes that would only answer 401. */
     body.share-view #single-form, body.share-view #lists-hint,
     body.share-view #bulk-form, body.share-view .bulk-controls,
-    body.share-view .share-row { display: none; }
+    body.share-view .share-row, body.share-view #rep-sec { display: none; }
     /* The share card is a real card; undo the old inline share-row strip look.
        Descriptions wrap on word boundaries; only a pasted URL may break anywhere. */
     .share-card.share-row { border-top: 1px solid var(--line); padding: 20px; }
@@ -891,12 +891,24 @@ example.com"></textarea>
       location.reload();
     });
 
+    // A reload comes back to the page it was on, not to Analyze. Runs after
+    // applyAuthUi so a tab the current role cannot see is never restored, and
+    // never on shared /r/ pages, which have their own fixed view.
+    function restoreTab() {
+      if (IS_SHARE_PAGE) return;
+      let saved = null;
+      try { saved = localStorage.getItem('dbc_tab'); } catch { /* storage may be off */ }
+      if (!saved || saved === 'single') return;
+      const el = document.querySelector('.tab[data-tab="' + saved + '"]');
+      if (el && !el.classList.contains('hidden')) el.click();
+    }
+
     (async function bootAuth() {
       try { me = await (await fetch('/api/me')).json(); }
       catch { me = { authenticated: false, loginEnabled: true }; }
       me.authenticated = Boolean(me.authenticated);
       applyAuthUi();
-      if (me.authenticated) loadAppData();
+      if (me.authenticated) { loadAppData(); restoreTab(); }
     })();
     const scoreColor = (s) => (s >= 85 ? 'var(--clean)' : s >= 50 ? 'var(--listed)' : 'var(--bad)');
 
@@ -920,6 +932,8 @@ example.com"></textarea>
         document.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
         t.classList.add('active');
         const active = t.dataset.tab;
+        // Remember the page so a reload lands back on it, not on Analyze.
+        try { localStorage.setItem('dbc_tab', active); } catch { /* storage may be off */ }
         setPageHead(active);
         for (const [tab, id] of Object.entries(PANES)) {
           document.getElementById(id).classList.toggle('hidden', tab !== active);
@@ -1507,7 +1521,7 @@ example.com"></textarea>
         });
         const j = await res.json();
         if (!j.ok) throw new Error(j.error || 'could not create the link');
-        const url = location.origin + j.url;
+        const url = j.shareUrl || (location.origin + j.url);
         try { await navigator.clipboard.writeText(url); btn.textContent = 'Link copied!'; }
         catch { btn.textContent = 'Link ready'; }
         if (noteEl) {
@@ -2293,7 +2307,7 @@ example.com"></textarea>
         // leaves the DOM outright instead of being hidden with CSS, so even
         // devtools cannot un-hide a search box on a shared page. The share
         // button goes too; a viewer shares by copying the address bar.
-        for (const sel of ['#single-form', '#lists-hint', '#bulk-form', '.bulk-controls', '.share-row']) {
+        for (const sel of ['#single-form', '#lists-hint', '#bulk-form', '.bulk-controls', '.share-row', '#rep-sec']) {
           document.querySelectorAll(sel).forEach((el) => el.remove());
         }
         // After any tab switch above, so a pane's own heading cannot win.

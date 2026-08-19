@@ -431,10 +431,16 @@ export function buildServer() {
     const body = (req.body && typeof req.body === 'object') ? req.body : {};
     try {
       const r = await createShare(body.kind, body.data);
+      // With DBC_SHARE_BASE_URL set (e.g. https://deliverly.ai) the copyable
+      // link is composed on that base instead of whatever host served the app.
+      // That base must actually route /r/* to this server (a proxy/rewrite on
+      // the brand domain); this setting only changes the printed link.
+      const shareBase = (process.env.DBC_SHARE_BASE_URL || '').trim().replace(/\/+$/, '');
       return {
         ok: true,
         id: r.id,
         url: '/r/' + r.id,
+        shareUrl: shareBase ? shareBase + '/r/' + r.id : null,
         expiresAt: r.expiresAt,
         persisted: r.persisted,
         note: r.persisted

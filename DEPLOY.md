@@ -129,6 +129,22 @@ DBC_TRUST_PROXY=true reads it for rate limiting and the Visitors page.
 - Share links (`/r/<id>`) are relative, so they work on the new domain with
   no extra configuration.
 
+## Optional: brand-domain share links (https://deliverly.ai/r/...)
+
+Set `DBC_SHARE_BASE_URL=https://deliverly.ai` in .env and the Copy shareable
+link button hands out links on that domain. The brand domain must then route
+`/r/*` to this server, or the links lead nowhere:
+
+- Cloudflare in front of deliverly.ai: an Origin Rule / Worker that proxies
+  `deliverly.ai/r/*` to `blacklist.deliverlymail.com`.
+- deliverly.ai on Vercel: a rewrite in vercel.json:
+  `{ "rewrites": [{ "source": "/r/:id", "destination": "https://blacklist.deliverlymail.com/r/:id" }] }`
+  (also rewrite `/api/share/:id` and `/brand-icon.svg`, `/Deloverly%20Icon%20-%20Colored.svg`
+  the same way, since the share page fetches those paths relative to the page).
+
+A plain HTTP redirect also works but the visitor's address bar then shows the
+checker host, not the brand domain; a rewrite/proxy keeps the brand URL.
+
 ## Updating a running deployment
 
 ```
