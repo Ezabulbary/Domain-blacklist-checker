@@ -108,11 +108,12 @@
     @media (max-width: 880px) { h1 { font-size: 24px; } }
     /* Shared-report pages have no login, so no sidebar either. */
     body.share-view .sidebar { display: none; }
-    /* Small screens: the sidebar becomes a top bar. */
+    /* Small screens: the sidebar becomes a sticky top bar. */
     @media (max-width: 880px) {
       .app { flex-direction: column; }
-      .sidebar { width: 100%; height: auto; position: static; flex-direction: row;
-        align-items: center; padding: 10px 12px; border-right: none; border-bottom: 1px solid var(--line); }
+      .sidebar { width: 100%; height: auto; position: sticky; top: 0; z-index: 40; flex-direction: row;
+        align-items: center; padding: 10px 12px; border-right: none; border-bottom: 1px solid var(--line);
+        overflow-y: visible; }
       .side-brand { padding: 0 10px 0 0; }
       .brand-txt { display: none; }
       .side-nav { flex-direction: row; gap: 4px; }
@@ -123,7 +124,40 @@
         flex-direction: row; align-items: center; }
       .side-user-meta { display: none; }
       .side-logout span { display: none; }
+      .side-logout { width: auto; padding: 8px 11px; }
       .wrap { padding: 22px 16px 70px; }
+    }
+    /* Phones: tighter cards and tables, stacked controls, full-width actions. */
+    @media (max-width: 640px) {
+      .card { padding: 16px; border-radius: 10px; }
+      .wrap { padding: 16px 12px 60px; }
+      h1 { font-size: 22px; }
+      .sub { font-size: 14px; }
+      /* The single search stacks so the button never squeezes the input. */
+      #single-form { flex-direction: column; }
+      #single-form button { width: 100%; }
+      /* Bulk controls become two tidy full-width rows. */
+      .bulk-controls { gap: 8px; }
+      .bulk-controls > button, .bulk-controls > label.file { flex: 1 1 45%; justify-content: center; text-align: center; }
+      /* Result tables: smaller type, tighter cells; they scroll inside
+         .table-scroll, the page itself never scrolls sideways. */
+      table.bl th, table.bl td { padding: 7px 8px; font-size: 12.5px; }
+      .stat-strip { margin: 16px -16px -16px; padding: 12px 16px; }
+      .ring-wrap { width: 160px; height: 160px; }
+      .ring-num { font-size: 44px; }
+      .tile-grid { gap: 10px; }
+      .tile { padding: 12px 8px; }
+      .modal { padding: 12px; }
+      .modal-card { padding: 20px 16px; max-height: 92vh; }
+      .api-hero { padding: 18px 16px; }
+      .key-row { flex-direction: column; align-items: stretch; }
+      .key-row button { width: 100%; }
+      .key-item { gap: 10px; }
+      .key-del { width: 100%; }
+      .vis-grid { grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+      .share-brand { padding: 10px 14px; }
+      .share-brand-cta { width: 100%; text-align: center; }
+      .login-card { padding: 26px 20px 22px; }
     }
     form { display: flex; gap: 10px; }
     input[type=text], textarea {
