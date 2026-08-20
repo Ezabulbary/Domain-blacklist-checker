@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { loadEnv } from './lib/env.js';
 
@@ -459,6 +460,9 @@ export function buildServer() {
   });
 
   app.get('/api/share/:id', async (req, reply) => {
+    // Public read-only data (holding the link IS the authorization), so the
+    // share page may fetch it cross-origin when a brand domain proxies /r/*.
+    reply.header('access-control-allow-origin', '*');
     const snap = await getShare(req.params.id);
     if (!snap) return reply.code(404).send({ ok: false, error: 'this link does not exist or has expired' });
     return { ok: true, kind: snap.kind, data: snap.payload, createdAt: snap.createdAt, expiresAt: snap.expiresAt };
@@ -466,7 +470,25 @@ export function buildServer() {
 
   // The share page itself is the normal UI; it reads the id from the path and
   // fetches the snapshot instead of running a live check.
-  app.get('/r/:id', (req, reply) => reply.sendFile('index.html'));
+  //
+  // A <base> tag naming this server is injected so the page also works when a
+  // brand domain (DBC_SHARE_BASE_URL) proxies /r/* here: the browser then
+  // loads the page's own assets and the snapshot fetch from THIS host instead
+  // of asking the brand domain for paths it does not have. Served directly,
+  // the base is the page's own origin, so nothing changes.
+  let shareHtmlCache = null;
+  app.get('/r/:id', (req, reply) => {
+    if (shareHtmlCache === null || process.env.NODE_ENV === 'test') {
+      shareHtmlCache = readFileSync(join(__dirname, '..', 'public', 'index.html'), 'utf8');
+    }
+    const host = String(req.headers.host || '');
+    const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+    // Host headers are attacker-supplied; only a plain hostname[:port] is ever
+    // reflected into the page.
+    const safe = /^[a-z0-9.-]+(:\d+)?$/i.test(host) && /^https?$/.test(proto);
+    const base = safe ? '<base href="' + proto + '://' + host + '/">' : '';
+    reply.type('text/html; charset=utf-8').send(shareHtmlCache.replace('<head>', '<head>' + base));
+  });
 
   // ---- Visitor presence (the admin Visitors page) ----
   // Every open browser heartbeats here, logged in or not, share pages

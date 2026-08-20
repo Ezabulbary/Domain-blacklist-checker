@@ -133,14 +133,29 @@ DBC_TRUST_PROXY=true reads it for rate limiting and the Visitors page.
 
 Set `DBC_SHARE_BASE_URL=https://deliverly.ai` in .env and the Copy shareable
 link button hands out links on that domain. The brand domain must then route
-`/r/*` to this server, or the links lead nowhere:
+`/r/*` to this server, or the links answer 404. Exactly ONE rewrite is
+needed; the served page carries a `<base>` tag naming this server, so its
+assets and the snapshot fetch come straight from here (the snapshot endpoint
+sends the CORS header for that).
+
+- deliverly.ai on Vercel / Next.js, either vercel.json:
+
+  ```json
+  { "rewrites": [
+    { "source": "/r/:id", "destination": "https://blacklist.deliverlymail.com/r/:id" }
+  ] }
+  ```
+
+  or next.config.js:
+
+  ```js
+  async rewrites() {
+    return [{ source: '/r/:id', destination: 'https://blacklist.deliverlymail.com/r/:id' }];
+  }
+  ```
 
 - Cloudflare in front of deliverly.ai: an Origin Rule / Worker that proxies
   `deliverly.ai/r/*` to `blacklist.deliverlymail.com`.
-- deliverly.ai on Vercel: a rewrite in vercel.json:
-  `{ "rewrites": [{ "source": "/r/:id", "destination": "https://blacklist.deliverlymail.com/r/:id" }] }`
-  (also rewrite `/api/share/:id` and `/brand-icon.svg`, `/Deloverly%20Icon%20-%20Colored.svg`
-  the same way, since the share page fetches those paths relative to the page).
 
 A plain HTTP redirect also works but the visitor's address bar then shows the
 checker host, not the brand domain; a rewrite/proxy keeps the brand URL.

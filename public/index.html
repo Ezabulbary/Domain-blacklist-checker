@@ -588,6 +588,16 @@
     body.share-view #single-form, body.share-view #lists-hint,
     body.share-view #bulk-form, body.share-view .bulk-controls,
     body.share-view .share-row, body.share-view #rep-sec { display: none; }
+    /* The brand bar exists only on shared pages. */
+    .share-brand { display: none; }
+    body.share-view .share-brand { display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line);
+      border-radius: 12px; padding: 12px 18px; margin-bottom: 22px; }
+    .share-brand-l { display: flex; gap: 10px; align-items: center; }
+    .share-brand img { width: 32px; height: auto; display: block; }
+    .share-brand-cta { background: var(--accent); color: #fff; font-weight: 700; font-size: 13.5px;
+      padding: 9px 18px; border-radius: 999px; text-decoration: none; transition: background .15s; }
+    .share-brand-cta:hover { background: var(--accent2); }
     /* The share card is a real card; undo the old inline share-row strip look.
        Descriptions wrap on word boundaries; only a pasted URL may break anywhere. */
     .share-card.share-row { border-top: 1px solid var(--line); padding: 20px; }
@@ -649,6 +659,15 @@
 
     <main class="main">
   <div class="wrap">
+    <!-- Shared-report pages only: the viewer sees whose report this is
+         without anyone having to explain it. -->
+    <div class="share-brand">
+      <span class="share-brand-l">
+        <img src="/Deloverly%20Icon%20-%20Colored.svg" onerror="brandIconFallback(this)" alt="">
+        <span class="brand-t">deliverly<span class="brand-ai">.ai</span></span>
+      </span>
+      <a class="share-brand-cta" href="https://deliverly.ai" target="_blank" rel="noopener">Check your own domain at deliverly.ai</a>
+    </div>
     <header class="main-head">
       <h1 id="page-title">Deliverability Insights</h1>
       <p class="sub" id="page-sub">Optimizing your inbox reach with domain health analysis.</p>
@@ -677,7 +696,7 @@ example.com"></textarea>
         <label class="toggle"><input type="checkbox" id="bulk-auth" checked> Also check SPF, DKIM and DMARC</label>
         <label class="file">Upload .txt/.csv<input type="file" id="bulk-file" accept=".txt,.csv,.lst,text/plain,text/csv" /></label>
         <button id="bulk-csv" class="ghost hidden" type="button">Download CSV</button>
-        <button id="bulk-share" class="ghost hidden" type="button">Copy shareable link</button>
+        <button id="bulk-share" class="ghost" type="button" disabled title="Run a check first, then share the result">Copy shareable link</button>
         <span class="spacer"></span>
         <span class="hint" id="bulk-count">0 domains</span>
       </div>
@@ -2179,6 +2198,8 @@ example.com"></textarea>
       running = true; cancel = false;
       bGo.textContent = 'Stop';
       bCsv.classList.add('hidden');
+      const bShare = document.getElementById('bulk-share');
+      bShare.disabled = true;
       lastResults = [];
 
       const total = domains.length;
@@ -2248,7 +2269,7 @@ example.com"></textarea>
         elStatus.textContent = (cancel && done < total ? 'Stopped after ' + done + ' of ' + total : 'Checked ' + done + ' domains')
           + ' in ' + fmtLeft(Date.now() - started);
         if (overflow) elNote.textContent += ' · ' + overflow + ' domains over the ' + MAX_TOTAL + ' limit were not checked';
-        if (done) { bCsv.classList.remove('hidden'); document.getElementById('bulk-share').classList.remove('hidden'); }
+        if (done) { bCsv.classList.remove('hidden'); bShare.disabled = false; bShare.title = ''; }
       } finally {
         running = false; cancel = false;
         bGo.textContent = 'Check all';

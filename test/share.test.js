@@ -93,3 +93,34 @@ test('without DBC_SHARE_BASE_URL the shareUrl is null and the relative url serve
     assert.equal(created.json().shareUrl, null);
   } finally { await app.close(); }
 });
+
+test('the share page carries a <base> naming this server, host header sanitized', async () => {
+  const app = buildServer();
+  try {
+    const ok = await app.inject({
+      method: 'GET', url: '/r/' + 'a'.repeat(32),
+      headers: { host: 'blacklist.deliverlymail.com', 'x-forwarded-proto': 'https' },
+    });
+    assert.equal(ok.statusCode, 200);
+    assert.match(ok.body, /<head><base href="https:\/\/blacklist\.deliverlymail\.com\/">/);
+
+    // A hostile Host header is never reflected into the page.
+    const evil = await app.inject({
+      method: 'GET', url: '/r/' + 'a'.repeat(32),
+      headers: { host: 'x"><script>alert(1)</script>' },
+    });
+    assert.equal(evil.statusCode, 200);
+    assert.ok(!evil.body.includes('<base'), 'no base tag for a malformed host');
+    assert.ok(!evil.body.includes('alert(1)'), 'nothing reflected');
+  } finally { await app.close(); }
+});
+
+test('the snapshot endpoint allows cross-origin reads for proxied share pages', async () => {
+  const app = buildServer();
+  try {
+    const r = await createShare('single', { domain: 'example.com' });
+    const res = await app.inject({ method: 'GET', url: '/api/share/' + r.id });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers['access-control-allow-origin'], '*');
+  } finally { await app.close(); }
+});
