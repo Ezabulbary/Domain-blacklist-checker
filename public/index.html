@@ -116,21 +116,27 @@
     .menu-btn .ic-close { display: none; }
     .sidebar.open .menu-btn .ic-burger { display: none; }
     .sidebar.open .menu-btn .ic-close { display: block; }
+    /* Desktop: the wrapper is layout-transparent, so the sidebar's column
+       flex still sees nav and foot as its own children. */
+    .side-drop { display: contents; }
     /* Small screens: a sticky top bar with the brand and a hamburger; the
-       whole menu (and the logout) drops down from the button. */
+       whole menu (and the logout) opens as an OVERLAY panel on top of the
+       page, so the page itself never shifts. */
     @media (max-width: 880px) {
       .app { flex-direction: column; }
       .sidebar { width: 100%; height: auto; position: sticky; top: 0; z-index: 40; flex-direction: row;
-        align-items: center; flex-wrap: wrap; padding: 10px 14px; border-right: none;
+        align-items: center; padding: 10px 14px; border-right: none;
         border-bottom: 1px solid var(--line); overflow-y: visible; }
       .side-brand { padding: 0; margin-right: auto; }
       .side-label { display: none; }
       .menu-btn { display: inline-grid; }
-      .side-nav, .side-foot { display: none; }
-      .sidebar.open .side-nav { display: flex; flex-direction: column; gap: 4px; width: 100%;
-        order: 5; padding-top: 14px; }
-      .sidebar.open .side-foot { display: flex; flex-direction: column; gap: 10px; width: 100%;
-        order: 6; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+      .side-drop { display: none; position: absolute; top: 100%; left: 0; right: 0;
+        background: var(--card); border-bottom: 1px solid var(--line);
+        padding: 14px; box-shadow: 0 14px 30px rgba(11,28,48,.12); }
+      .sidebar.open .side-drop { display: block; }
+      .side-nav { display: flex; flex-direction: column; gap: 4px; }
+      .side-foot { display: flex; flex-direction: column; gap: 10px; margin-top: 12px;
+        border-top: 1px solid var(--line); padding-top: 14px; }
       .tab { padding: 13px 14px; }
       .wrap { padding: 22px 16px 70px; }
     }
@@ -690,6 +696,8 @@
         <svg class="ic-burger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         <svg class="ic-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
+      <!-- display:contents on desktop, an overlay dropdown panel on phones. -->
+      <div class="side-drop">
       <nav class="side-nav" aria-label="Main menu">
         <div class="side-label">Menu</div>
         <div class="tab active" data-tab="single" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><span>Analyze</span></div>
@@ -706,6 +714,7 @@
           </div>
         </div>
         <button class="ghost side-logout" id="logout-btn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Log out</span></button>
+      </div>
       </div>
     </aside>
 
