@@ -108,23 +108,30 @@
     @media (max-width: 880px) { h1 { font-size: 24px; } }
     /* Shared-report pages have no login, so no sidebar either. */
     body.share-view .sidebar { display: none; }
-    /* Small screens: the sidebar becomes a sticky top bar. */
+    /* The hamburger only exists on small screens. */
+    .menu-btn { display: none; width: 42px; height: 42px; flex: none; padding: 0; border-radius: 10px;
+      background: var(--card); border: 1px solid var(--line2); color: var(--fg); place-items: center; }
+    .menu-btn svg { width: 22px; height: 22px; }
+    .menu-btn:hover:not(:disabled), .menu-btn:focus { background: var(--tonal); color: var(--fg); outline: none; }
+    .menu-btn .ic-close { display: none; }
+    .sidebar.open .menu-btn .ic-burger { display: none; }
+    .sidebar.open .menu-btn .ic-close { display: block; }
+    /* Small screens: a sticky top bar with the brand and a hamburger; the
+       whole menu (and the logout) drops down from the button. */
     @media (max-width: 880px) {
       .app { flex-direction: column; }
       .sidebar { width: 100%; height: auto; position: sticky; top: 0; z-index: 40; flex-direction: row;
-        align-items: center; padding: 10px 12px; border-right: none; border-bottom: 1px solid var(--line);
-        overflow-y: visible; }
-      .side-brand { padding: 0 10px 0 0; }
-      .brand-txt { display: none; }
-      .side-nav { flex-direction: row; gap: 4px; }
+        align-items: center; flex-wrap: wrap; padding: 10px 14px; border-right: none;
+        border-bottom: 1px solid var(--line); overflow-y: visible; }
+      .side-brand { padding: 0; margin-right: auto; }
       .side-label { display: none; }
-      .tab { padding: 9px 12px; }
-      .tab span { display: none; }
-      .side-foot { margin-top: 0; margin-left: auto; border-top: none; padding-top: 0;
-        flex-direction: row; align-items: center; }
-      .side-user-meta { display: none; }
-      .side-logout span { display: none; }
-      .side-logout { width: auto; padding: 8px 11px; }
+      .menu-btn { display: inline-grid; }
+      .side-nav, .side-foot { display: none; }
+      .sidebar.open .side-nav { display: flex; flex-direction: column; gap: 4px; width: 100%;
+        order: 5; padding-top: 14px; }
+      .sidebar.open .side-foot { display: flex; flex-direction: column; gap: 10px; width: 100%;
+        order: 6; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+      .tab { padding: 13px 14px; }
       .wrap { padding: 22px 16px 70px; }
     }
     /* Phones: tighter cards and tables, stacked controls, full-width actions. */
@@ -678,6 +685,11 @@
           <div class="brand-txt"><span class="brand-t">deliverly<span class="brand-ai">.ai</span></span><span class="brand-s">Domain health checker</span></div>
         </span>
       </div>
+      <!-- Phone only: the whole menu (and logout) lives behind this button. -->
+      <button class="menu-btn" id="menu-btn" type="button" aria-label="Menu" aria-expanded="false">
+        <svg class="ic-burger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <svg class="ic-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
       <nav class="side-nav" aria-label="Main menu">
         <div class="side-label">Menu</div>
         <div class="tab active" data-tab="single" role="button" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><span>Analyze</span></div>
@@ -945,6 +957,26 @@ example.com"></textarea>
       }
     });
 
+    // ---- phone menu (hamburger) ----
+    const sidebarEl = document.querySelector('.sidebar');
+    const menuBtn = document.getElementById('menu-btn');
+    function closeMobileMenu() {
+      if (!sidebarEl) return;
+      sidebarEl.classList.remove('open');
+      if (menuBtn) menuBtn.setAttribute('aria-expanded', 'false');
+    }
+    if (menuBtn) {
+      menuBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const open = sidebarEl.classList.toggle('open');
+        menuBtn.setAttribute('aria-expanded', String(open));
+      });
+      // A tap anywhere outside the bar folds the menu away.
+      document.addEventListener('click', (ev) => {
+        if (sidebarEl.classList.contains('open') && !sidebarEl.contains(ev.target)) closeMobileMenu();
+      });
+    }
+
     document.getElementById('logout-btn').addEventListener('click', async () => {
       try { await fetch('/api/logout', { method: 'POST' }); } catch {}
       location.reload();
@@ -993,6 +1025,7 @@ example.com"></textarea>
         const active = t.dataset.tab;
         // Remember the page so a reload lands back on it, not on Analyze.
         try { localStorage.setItem('dbc_tab', active); } catch { /* storage may be off */ }
+        closeMobileMenu(); // picking a page folds the phone menu away
         setPageHead(active);
         for (const [tab, id] of Object.entries(PANES)) {
           document.getElementById(id).classList.toggle('hidden', tab !== active);
