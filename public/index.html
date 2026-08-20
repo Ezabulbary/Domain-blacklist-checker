@@ -1546,7 +1546,9 @@ example.com"></textarea>
         });
         const j = await res.json();
         if (!j.ok) throw new Error(j.error || 'could not create the link');
-        const url = j.shareUrl || (location.origin + j.url);
+        // Always the page's own origin, so the copied link matches the domain
+        // the app is open on.
+        const url = location.origin + j.url;
         try { await navigator.clipboard.writeText(url); btn.textContent = 'Link copied!'; }
         catch { btn.textContent = 'Link ready'; }
         if (noteEl) {

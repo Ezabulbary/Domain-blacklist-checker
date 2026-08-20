@@ -129,36 +129,15 @@ DBC_TRUST_PROXY=true reads it for rate limiting and the Visitors page.
 - Share links (`/r/<id>`) are relative, so they work on the new domain with
   no extra configuration.
 
-## Optional: brand-domain share links (https://deliverly.ai/r/...)
+## Share links and domains
 
-Set `DBC_SHARE_BASE_URL=https://deliverly.ai` in .env and the Copy shareable
-link button hands out links on that domain. The brand domain must then route
-`/r/*` to this server, or the links answer 404. Exactly ONE rewrite is
-needed; the served page carries a `<base>` tag naming this server, so its
-assets and the snapshot fetch come straight from here (the snapshot endpoint
-sends the CORS header for that).
-
-- deliverly.ai on Vercel / Next.js, either vercel.json:
-
-  ```json
-  { "rewrites": [
-    { "source": "/r/:id", "destination": "https://blacklist.deliverlymail.com/r/:id" }
-  ] }
-  ```
-
-  or next.config.js:
-
-  ```js
-  async rewrites() {
-    return [{ source: '/r/:id', destination: 'https://blacklist.deliverlymail.com/r/:id' }];
-  }
-  ```
-
-- Cloudflare in front of deliverly.ai: an Origin Rule / Worker that proxies
-  `deliverly.ai/r/*` to `blacklist.deliverlymail.com`.
-
-A plain HTTP redirect also works but the visitor's address bar then shows the
-checker host, not the brand domain; a rewrite/proxy keeps the brand URL.
+Copied share links always use the domain the app is open on: used at
+https://domain-blacklist-checker.onrender.com the link is
+`https://domain-blacklist-checker.onrender.com/r/<id>`, and after adding a
+custom domain the same button hands out links on that domain instead.
+Nothing to configure. (If a brand site should ever serve these links, it can
+proxy `/r/:id` to this server; the page carries a `<base>` tag and the
+snapshot endpoint sends CORS headers, so a single rewrite is enough.)
 
 ## Updating a running deployment
 

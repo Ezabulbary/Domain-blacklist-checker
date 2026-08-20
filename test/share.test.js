@@ -61,8 +61,7 @@ test('the share routes work end to end', async () => {
   await app.close();
 });
 
-test('DBC_SHARE_BASE_URL composes the copyable link on the brand domain', async () => {
-  process.env.DBC_SHARE_BASE_URL = 'https://deliverly.ai/'; // trailing slash on purpose
+test('the create response carries a relative url, so the link follows the serving domain', async () => {
   const app = buildServer();
   try {
     const loginRes = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: 'pass-@admin' } });
@@ -73,24 +72,8 @@ test('DBC_SHARE_BASE_URL composes the copyable link on the brand domain', async 
     });
     const j = created.json();
     assert.equal(j.ok, true);
-    assert.match(j.shareUrl, /^https:\/\/deliverly\.ai\/r\/[0-9a-f]{32}$/, 'no double slash, brand base');
-    assert.match(j.url, /^\/r\/[0-9a-f]{32}$/, 'the relative url stays for same-host use');
-  } finally {
-    delete process.env.DBC_SHARE_BASE_URL;
-    await app.close();
-  }
-});
-
-test('without DBC_SHARE_BASE_URL the shareUrl is null and the relative url serves', async () => {
-  const app = buildServer();
-  try {
-    const loginRes = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: 'pass-@admin' } });
-    const cookie = (loginRes.headers['set-cookie'] || '').split(';')[0];
-    const created = await app.inject({
-      method: 'POST', url: '/api/share', headers: { cookie },
-      payload: { kind: 'single', data: { domain: 'example.com' } },
-    });
-    assert.equal(created.json().shareUrl, null);
+    assert.match(j.url, /^\/r\/[0-9a-f]{32}$/, 'relative, never a hardcoded host');
+    assert.equal(j.shareUrl, undefined, 'no absolute override exists any more');
   } finally { await app.close(); }
 });
 

@@ -432,16 +432,13 @@ export function buildServer() {
     const body = (req.body && typeof req.body === 'object') ? req.body : {};
     try {
       const r = await createShare(body.kind, body.data);
-      // With DBC_SHARE_BASE_URL set (e.g. https://deliverly.ai) the copyable
-      // link is composed on that base instead of whatever host served the app.
-      // That base must actually route /r/* to this server (a proxy/rewrite on
-      // the brand domain); this setting only changes the printed link.
-      const shareBase = (process.env.DBC_SHARE_BASE_URL || '').trim().replace(/\/+$/, '');
+      // The url is relative on purpose: the page composes the copyable link on
+      // its own origin, so a share link always matches the domain the app is
+      // actually being used on, whatever that is.
       return {
         ok: true,
         id: r.id,
         url: '/r/' + r.id,
-        shareUrl: shareBase ? shareBase + '/r/' + r.id : null,
         expiresAt: r.expiresAt,
         persisted: r.persisted,
         note: r.persisted
@@ -471,8 +468,8 @@ export function buildServer() {
   // The share page itself is the normal UI; it reads the id from the path and
   // fetches the snapshot instead of running a live check.
   //
-  // A <base> tag naming this server is injected so the page also works when a
-  // brand domain (DBC_SHARE_BASE_URL) proxies /r/* here: the browser then
+  // A <base> tag naming this server is injected so the page also works when
+  // some other domain proxies /r/* here: the browser then
   // loads the page's own assets and the snapshot fetch from THIS host instead
   // of asking the brand domain for paths it does not have. Served directly,
   // the base is the page's own origin, so nothing changes.
