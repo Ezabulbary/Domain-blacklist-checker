@@ -145,7 +145,13 @@
     button:disabled { opacity: .55; cursor: default; }
     .bulk-controls { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
     .bulk-controls .hint { color: var(--muted); font-size: 13px; }
-    label.file { font-size: 14px; color: var(--accent); cursor: pointer; }
+    /* The upload control is a real button, same family as the ghost buttons
+       beside it; the file input stays hidden inside the label. */
+    label.file { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px;
+      font-size: 14px; font-weight: 700; color: var(--fg); background: var(--card);
+      border: 1px solid var(--line2); border-radius: 999px; cursor: pointer; user-select: none;
+      transition: border-color .15s, color .15s, background .15s; }
+    label.file:hover { border-color: var(--accent); color: var(--accent2); background: var(--bg2); }
     label.file input { display: none; }
     /* Level 1 surface: pure white, thin border, no real shadow (tonal layering). */
     .card {
